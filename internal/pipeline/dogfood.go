@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	openapiparser "github.com/mvanhorn/cli-printing-press/internal/openapi"
 	apispec "github.com/mvanhorn/cli-printing-press/internal/spec"
 )
 
@@ -130,17 +131,133 @@ func writeDogfoodResults(report *DogfoodReport, dir string) error {
 }
 
 func loadDogfoodOpenAPISpec(specPath string) (*openAPISpec, error) {
-	summary, err := loadSpecSummary(specPath)
+	data, err := os.ReadFile(specPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading spec: %w", err)
 	}
-	if summary == nil {
-		return nil, nil
+
+	parsed, parseErr := openapiparser.ParseLenient(data)
+	if parseErr == nil {
+		return &openAPISpec{
+			Paths: collectDogfoodSpecPaths(parsed.Resources),
+			Auth:  parsed.Auth,
+		}, nil
 	}
+
+	summary, err := loadOpenAPISpec(specPath)
+	if err != nil {
+		return nil, parseErr
+	}
+
 	return &openAPISpec{
 		Paths: summary.Paths,
-		Auth:  summary.Auth,
+		Auth:  deriveDogfoodAuth(summary),
 	}, nil
+}
+
+func collectDogfoodSpecPaths(resources map[string]apispec.Resource) []string {
+	var paths []string
+	for _, resource := range resources {
+		collectDogfoodResourcePaths(resource, &paths)
+	}
+	return uniqueSorted(paths)
+}
+
+func collectDogfoodResourcePaths(resource apispec.Resource, paths *[]string) {
+	for _, endpoint := range resource.Endpoints {
+		if strings.TrimSpace(endpoint.Path) != "" {
+			*paths = append(*paths, endpoint.Path)
+		}
+	}
+	for _, subresource := range resource.SubResources {
+		collectDogfoodResourcePaths(subresource, paths)
+	}
+}
+
+func deriveDogfoodAuth(spec *openAPISpecInfo) apispec.AuthConfig {
+	if spec == nil {
+		return apispec.AuthConfig{Type: "none"}
+	}
+
+	candidateKeys := referencedDogfoodSecurityKeys(spec.SecurityRequirements)
+	if len(candidateKeys) == 0 {
+		for key := range spec.SecuritySchemes {
+			candidateKeys = append(candidateKeys, key)
+		}
+		sort.Strings(candidateKeys)
+	}
+
+	for _, key := range candidateKeys {
+		scheme, ok := spec.SecuritySchemes[key]
+		if !ok {
+			continue
+		}
+		if auth, ok := dogfoodAuthConfigForScheme(scheme); ok {
+			return auth
+		}
+	}
+
+	return apispec.AuthConfig{Type: "none"}
+}
+
+func referencedDogfoodSecurityKeys(requirements []securityRequirementSet) []string {
+	seen := make(map[string]struct{})
+	var keys []string
+	for _, requirementSet := range requirements {
+		for _, alternative := range requirementSet.Alternatives {
+			for _, key := range alternative {
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				keys = append(keys, key)
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func dogfoodAuthConfigForScheme(scheme openAPISecurityScheme) (apispec.AuthConfig, bool) {
+	nameLower := strings.ToLower(scheme.Key)
+	auth := apispec.AuthConfig{
+		Type:   "none",
+		Scheme: scheme.Key,
+	}
+
+	switch {
+	case strings.Contains(nameLower, "bot"):
+		auth.Type = "api_key"
+		auth.Header = "Authorization"
+		auth.Format = "Bot {bot_token}"
+		return auth, true
+	case scheme.Type == "http" && scheme.Scheme == "bearer":
+		auth.Type = "bearer_token"
+		auth.Header = "Authorization"
+		return auth, true
+	case scheme.Type == "http" && scheme.Scheme == "basic":
+		auth.Type = "api_key"
+		auth.Header = "Authorization"
+		auth.Format = "Basic {username}:{password}"
+		return auth, true
+	case scheme.Type == "apikey":
+		auth.Type = "api_key"
+		auth.In = scheme.In
+		auth.Header = strings.TrimSpace(scheme.HeaderName)
+		if auth.Header == "" {
+			auth.Header = "Authorization"
+		}
+		if strings.EqualFold(auth.Header, "Authorization") && strings.Contains(nameLower, "bot") {
+			auth.Format = "Bot {bot_token}"
+		}
+		return auth, true
+	case scheme.Type == "oauth2" || scheme.Type == "openidconnect":
+		auth.Type = "bearer_token"
+		auth.Header = "Authorization"
+		return auth, true
+	default:
+		return apispec.AuthConfig{}, false
+	}
 }
 
 func checkPaths(dir string, paths []string) PathCheckResult {
