@@ -43,3 +43,15 @@ Run `go test ./...` before considering your work done.
 ## Quality Gates
 
 Generated CLIs must pass 7 gates: go mod tidy, go vet, go build, binary build, --help, version, doctor.
+
+## `~/.printing-press/` Layout
+
+Generated artifacts live under the user's home directory, not in this repo.
+
+- `library/<cli-name>/` — Published CLIs (e.g., `notion-pp-cli`). Directory name matches the derived CLI name from `naming.CLI()`.
+- `manuscripts/<api-slug>/` — Archived research and verification proofs, keyed by API slug (e.g., `notion`), not CLI name. One API can have multiple runs.
+- `.runstate/<scope>/` — Mutable per-workspace state (current run, sync cursors). Scoped by repo basename + hash.
+
+The API slug is derived by the generator from the spec title (`cleanSpecName`), not manually chosen. The CLI name is `<api-slug>-pp-cli`. Never hardcode an API slug when the generator can derive it — names with periods (cal.com, dub.co) normalize differently than you'd guess.
+
+The `-pp-` infix exists to avoid colliding with official CLIs. `notion-pp-cli` can coexist with whatever `notion-cli` Notion ships themselves.
