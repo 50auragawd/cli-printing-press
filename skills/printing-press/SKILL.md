@@ -1922,7 +1922,9 @@ Agent tool:
 
 2. Proceed to Phase 5. Do NOT silently continue.
 
-### Step 4.9b: Process Results (Pass 1)
+### Step 4.9b: Process Initial Results
+
+**Set `pass_count = 0`.** The initial dispatch establishes the baseline — pass counting begins in Step 4.9d when you re-dispatch after fixes.
 
 The reviewer produces:
 - A scorecard table (7 principles x severity: Blocker/Friction/Optimization/None)
@@ -1961,15 +1963,23 @@ For each fix in the reviewer's ranked recommended fixes list:
 
 All listed fixes are attempted — the reviewer already ranks by impact.
 
+**After all fixes are attempted, proceed to Step 4.9d. Do NOT skip to Phase 5 or the Phase Gate.** You must re-dispatch the reviewer to verify fixes before evaluating termination.
+
 **Important:** The reviewer agent itself always runs inside Claude Code. Only the code-writing step is delegated. This preserves the same split as Phase 4: Claude reviews, prioritizes, and verifies; Codex writes the patch when the run started in Codex mode.
 
-### Step 4.9d: Termination Check
+### Step 4.9d: Re-dispatch Reviewer and Termination Check (MANDATORY)
 
-After implementing fixes, re-run the `compound-engineering:cli-agent-readiness-reviewer` agent on the same folder (same foreground dispatch as Step 4.9a — do NOT background). Evaluate the new scorecard:
+**You MUST re-dispatch the reviewer agent after implementing fixes.** Do NOT evaluate termination based on your own assessment of the fixes — only the reviewer's new scorecard counts. This re-dispatch is mandatory regardless of how confident you are that fixes resolved the issues.
 
-- **Zero Blockers AND zero Frictions:** Pass. Proceed to Phase 5.
-- **Blockers or Frictions remain, pass count < 2:** Return to Step 4.9c with the new fix list.
-- **Blockers or Frictions remain, pass count = 2:** Log remaining issues as known items. Proceed to Phase 5.
+**If you are about to proceed to Phase 5 without re-dispatching the reviewer after Step 4.9c, STOP — you are skipping a mandatory step. Go back and dispatch the agent.**
+
+Increment `pass_count` by 1, then re-run the `compound-engineering:cli-agent-readiness-reviewer` agent on the same folder (same foreground dispatch as Step 4.9a — do NOT background). **WAIT for results.**
+
+Evaluate the new scorecard:
+
+- **Zero Blockers AND zero Frictions:** Pass. Proceed to Phase Gate 4.9.
+- **Blockers or Frictions remain AND `pass_count < 2`:** Return to Step 4.9c with the new fix list. After implementing those fixes, return here — increment `pass_count` and re-dispatch again.
+- **Blockers or Frictions remain AND `pass_count >= 2`:** Log remaining issues as known items. Proceed to Phase Gate 4.9.
 
 **If the agent becomes unavailable between passes** (plugin timeout, tool error):
 1. Print this warning to the user:
@@ -1980,7 +1990,7 @@ After implementing fixes, re-run the `compound-engineering:cli-agent-readiness-r
     after pass [N]. Fixes from pass [N] were applied. No further review possible.
 ```
 
-2. Proceed to Phase 5. The pass count does not reset.
+2. Proceed to Phase Gate 4.9. The pass count does not reset.
 
 ### PHASE GATE 4.9
 
