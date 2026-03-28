@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -70,18 +71,23 @@ const (
 
 // PipelineState tracks which phases are done across sessions.
 type PipelineState struct {
-	Version        int                   `json:"version"`                           // state schema version for migration
-	APIName        string                `json:"api_name"`
-	OutputDir      string                `json:"output_dir"`
-	StartedAt      time.Time             `json:"started_at"`
-	Phases         map[string]PhaseState `json:"phases"`
-	SpecPath       string                `json:"spec_path,omitempty"`
-	SpecURL        string                `json:"spec_url,omitempty"`
-	DogfoodTimeout int                   `json:"dogfood_timeout_seconds,omitempty"` // default 600 (10 min)
-	DogfoodTier    int                   `json:"dogfood_tier,omitempty"`            // max tier to run (1-3, default 1)
+	Version                      int                   `json:"version"` // state schema version for migration
+	APIName                      string                `json:"api_name"`
+	RunID                        string                `json:"run_id,omitempty"`
+	Scope                        string                `json:"scope,omitempty"`
+	OutputDir                    string                `json:"output_dir"`
+	WorkingDir                   string                `json:"working_dir,omitempty"`
+	PublishedDir                 string                `json:"published_dir,omitempty"`
+	ExcludeFromCurrentResolution bool                  `json:"exclude_from_current_resolution,omitempty"`
+	StartedAt                    time.Time             `json:"started_at"`
+	Phases                       map[string]PhaseState `json:"phases"`
+	SpecPath                     string                `json:"spec_path,omitempty"`
+	SpecURL                      string                `json:"spec_url,omitempty"`
+	DogfoodTimeout               int                   `json:"dogfood_timeout_seconds,omitempty"` // default 600 (10 min)
+	DogfoodTier                  int                   `json:"dogfood_tier,omitempty"`            // max tier to run (1-3, default 1)
 }
 
-const currentStateVersion = 2
+const currentStateVersion = 3
 
 // PhaseState tracks a single phase.
 type PhaseState struct {
@@ -90,29 +96,245 @@ type PhaseState struct {
 	PlanStatus string `json:"plan_status,omitempty"`
 }
 
+type CurrentRunPointer struct {
+	APIName    string    `json:"api_name"`
+	RunID      string    `json:"run_id"`
+	Scope      string    `json:"scope"`
+	GitRoot    string    `json:"git_root"`
+	WorkingDir string    `json:"working_dir"`
+	StatePath  string    `json:"state_path"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 // PipelineDir returns the pipeline state directory path.
 func PipelineDir(apiName string) string {
+	if statePath, ok := resolveStatePath(apiName); ok {
+		if filepath.Base(filepath.Dir(statePath)) == "pipeline" {
+			return filepath.Dir(statePath)
+		}
+		return filepath.Join(filepath.Dir(statePath), "pipeline")
+	}
+	return legacyWorkspacePipelineDir(apiName)
+}
+
+func legacyWorkspacePipelineDir(apiName string) string {
+	return filepath.Join(LegacyWorkspaceManuscriptsRoot(), apiName, "pipeline")
+}
+
+func legacyRepoPipelineDir(apiName string) string {
 	return filepath.Join("docs", "plans", apiName+"-pipeline")
 }
 
 // StatePath returns the state.json path for an API pipeline.
 func StatePath(apiName string) string {
-	return filepath.Join(PipelineDir(apiName), "state.json")
+	if statePath, ok := resolveStatePath(apiName); ok {
+		return statePath
+	}
+	return filepath.Join(legacyWorkspacePipelineDir(apiName), "state.json")
+}
+
+func legacyWorkspaceStatePath(apiName string) string {
+	return filepath.Join(legacyWorkspacePipelineDir(apiName), "state.json")
+}
+
+func legacyRepoStatePath(apiName string) string {
+	return filepath.Join(legacyRepoPipelineDir(apiName), "state.json")
+}
+
+func newRunID(now time.Time) (string, error) {
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return "", fmt.Errorf("generating run id: %w", err)
+	}
+	return fmt.Sprintf("%s-%x", now.UTC().Format("20060102T150405Z"), suffix), nil
+}
+
+func loadCurrentRunPointer(apiName string) (*CurrentRunPointer, error) {
+	data, err := os.ReadFile(CurrentRunPointerPath(apiName))
+	if err != nil {
+		return nil, err
+	}
+
+	var pointer CurrentRunPointer
+	if err := json.Unmarshal(data, &pointer); err != nil {
+		return nil, err
+	}
+	return &pointer, nil
+}
+
+func writeCurrentRunPointer(state *PipelineState) error {
+	if state.ExcludeFromCurrentResolution {
+		return nil
+	}
+
+	pointer := CurrentRunPointer{
+		APIName:    state.APIName,
+		RunID:      state.RunID,
+		Scope:      state.Scope,
+		GitRoot:    repoRoot(),
+		WorkingDir: state.EffectiveWorkingDir(),
+		StatePath:  state.StatePath(),
+		UpdatedAt:  time.Now(),
+	}
+
+	if err := os.MkdirAll(CurrentRunDir(), 0o755); err != nil {
+		return fmt.Errorf("creating current run dir: %w", err)
+	}
+
+	data, err := json.MarshalIndent(pointer, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling current run pointer: %w", err)
+	}
+
+	return os.WriteFile(CurrentRunPointerPath(state.APIName), data, 0o644)
+}
+
+func findRunstateStatePath(apiName string) (string, bool) {
+	if pointer, err := loadCurrentRunPointer(apiName); err == nil && pointer.StatePath != "" {
+		if _, err := os.Stat(pointer.StatePath); err == nil {
+			return pointer.StatePath, true
+		}
+	}
+
+	pattern := filepath.Join(ScopedRunstateRoot(), "runs", "*", "state.json")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", false
+	}
+
+	var newest string
+	var newestTime time.Time
+	for _, candidate := range matches {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+
+		var state PipelineState
+		if err := json.Unmarshal(data, &state); err != nil {
+			continue
+		}
+		if state.APIName != apiName {
+			continue
+		}
+		if state.ExcludeFromCurrentResolution {
+			continue
+		}
+
+		info, err := os.Stat(candidate)
+		if err != nil {
+			continue
+		}
+		if newest == "" || info.ModTime().After(newestTime) {
+			newest = candidate
+			newestTime = info.ModTime()
+		}
+	}
+
+	if newest == "" {
+		return "", false
+	}
+	return newest, true
+}
+
+func resolveStatePath(apiName string) (string, bool) {
+	if statePath, ok := findRunstateStatePath(apiName); ok {
+		return statePath, true
+	}
+	if _, err := os.Stat(legacyWorkspaceStatePath(apiName)); err == nil {
+		return legacyWorkspaceStatePath(apiName), true
+	}
+	if _, err := os.Stat(legacyRepoStatePath(apiName)); err == nil {
+		return legacyRepoStatePath(apiName), true
+	}
+	return "", false
+}
+
+func LoadCurrentState(apiName string) (*PipelineState, error) {
+	pointer, err := loadCurrentRunPointer(apiName)
+	if err != nil {
+		return nil, fmt.Errorf("no current run for %q", apiName)
+	}
+	if pointer.StatePath == "" {
+		return nil, fmt.Errorf("no current run for %q", apiName)
+	}
+	if _, err := os.Stat(pointer.StatePath); err != nil {
+		return nil, fmt.Errorf("current run for %q is missing state: %w", apiName, err)
+	}
+	return LoadState(apiName)
+}
+
+func FindStateByWorkingDir(dir string) (*PipelineState, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving working dir: %w", err)
+	}
+
+	pattern := filepath.Join(ScopedRunstateRoot(), "runs", "*", "state.json")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("scanning runstate: %w", err)
+	}
+
+	for _, candidate := range matches {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+
+		var state PipelineState
+		if err := json.Unmarshal(data, &state); err != nil {
+			continue
+		}
+		if state.EffectiveWorkingDir() == absDir {
+			if state.RunID == "" {
+				state.RunID = filepath.Base(filepath.Dir(candidate))
+			}
+			if state.Scope == "" {
+				state.Scope = WorkspaceScope()
+			}
+			return &state, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no runstate entry for working dir %s", absDir)
 }
 
 // NewState creates a fresh pipeline state.
 func NewState(apiName, outputDir string) *PipelineState {
+	runID, err := newRunID(time.Now())
+	if err != nil {
+		outputDir = outputDir
+		runID = fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	return NewStateWithRun(apiName, outputDir, runID, WorkspaceScope())
+}
+
+func NewManagedState(apiName string) (*PipelineState, error) {
+	runID, err := newRunID(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return NewStateWithRun(apiName, WorkingCLIDir(apiName, runID), runID, WorkspaceScope()), nil
+}
+
+// NewStateWithRun creates a fresh pipeline state with a preallocated run identity.
+func NewStateWithRun(apiName, outputDir, runID, scope string) *PipelineState {
 	phases := make(map[string]PhaseState, len(PhaseOrder))
+	pipelineDir := RunPipelineDir(runID)
 	for _, name := range PhaseOrder {
 		phases[name] = PhaseState{
 			Status:   StatusPending,
-			PlanPath: filepath.Join(PipelineDir(apiName), PlanFilename(name)),
+			PlanPath: filepath.Join(pipelineDir, PlanFilename(name)),
 		}
 	}
 	state := &PipelineState{
 		Version:        currentStateVersion,
 		APIName:        apiName,
+		RunID:          runID,
+		Scope:          scope,
 		OutputDir:      outputDir,
+		WorkingDir:     outputDir,
 		StartedAt:      time.Now(),
 		Phases:         phases,
 		DogfoodTimeout: 600, // 10 minutes default
@@ -121,9 +343,24 @@ func NewState(apiName, outputDir string) *PipelineState {
 	return state
 }
 
-// Save writes state to disk.
-func (s *PipelineState) Save() error {
-	dir := PipelineDir(s.APIName)
+func (s *PipelineState) save(updateCurrentPointer bool) error {
+	if s.Scope == "" {
+		s.Scope = WorkspaceScope()
+	}
+	if s.RunID == "" {
+		runID, err := newRunID(time.Now())
+		if err != nil {
+			return err
+		}
+		s.RunID = runID
+	}
+	if s.WorkingDir == "" {
+		s.WorkingDir = s.OutputDir
+	}
+	if s.OutputDir == "" {
+		s.OutputDir = s.WorkingDir
+	}
+	dir := s.PipelineDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating pipeline dir: %w", err)
 	}
@@ -131,18 +368,65 @@ func (s *PipelineState) Save() error {
 	if err != nil {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
-	return os.WriteFile(StatePath(s.APIName), data, 0o644)
+	if err := os.WriteFile(s.StatePath(), data, 0o644); err != nil {
+		return err
+	}
+	if updateCurrentPointer {
+		if err := writeCurrentRunPointer(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Save writes state to disk and updates the current-run pointer for the API.
+func (s *PipelineState) Save() error {
+	return s.save(true)
+}
+
+// SaveWithoutCurrentPointer writes state to disk without taking ownership of
+// the API's current-run pointer.
+func (s *PipelineState) SaveWithoutCurrentPointer() error {
+	return s.save(false)
 }
 
 // LoadState reads existing state from disk, migrating old formats.
 func LoadState(apiName string) (*PipelineState, error) {
-	data, err := os.ReadFile(StatePath(apiName))
+	statePath, ok := resolveStatePath(apiName)
+	if !ok {
+		return nil, fmt.Errorf("reading state: stat %s: no such file or directory", StatePath(apiName))
+	}
+
+	data, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading state: %w", err)
 	}
+	sourcePath := statePath
 	var s PipelineState
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parsing state: %w", err)
+	}
+
+	needsSave := false
+	if s.RunID == "" {
+		runID, err := newRunID(time.Now())
+		if err != nil {
+			return nil, err
+		}
+		s.RunID = runID
+		needsSave = true
+	}
+	if s.Scope == "" {
+		s.Scope = WorkspaceScope()
+		needsSave = true
+	}
+	if s.WorkingDir == "" && s.OutputDir != "" {
+		s.WorkingDir = s.OutputDir
+		needsSave = true
+	}
+	if s.OutputDir == "" && s.WorkingDir != "" {
+		s.OutputDir = s.WorkingDir
+		needsSave = true
 	}
 	// Migrate: add missing phases, update PlanPath to stable-numbered format,
 	// and backfill PlanStatus for completed phases that predate the field.
@@ -154,13 +438,13 @@ func LoadState(apiName string) (*PipelineState, error) {
 				s.Phases[name] = PhaseState{
 					Status:     StatusCompleted,
 					PlanStatus: PlanStatusCompleted,
-					PlanPath:   filepath.Join(PipelineDir(apiName), PlanFilename(name)),
+					PlanPath:   filepath.Join(s.PipelineDir(), PlanFilename(name)),
 				}
 			} else {
 				// Migrate existing phases to stable-numbered PlanPath and
 				// backfill PlanStatus for completed phases that predate the field.
 				p := s.Phases[name]
-				p.PlanPath = filepath.Join(PipelineDir(apiName), PlanFilename(name))
+				p.PlanPath = filepath.Join(s.PipelineDir(), PlanFilename(name))
 				if p.Status == StatusCompleted && p.PlanStatus == "" {
 					p.PlanStatus = PlanStatusCompleted
 				}
@@ -168,10 +452,14 @@ func LoadState(apiName string) (*PipelineState, error) {
 			}
 		}
 		s.Version = currentStateVersion
-		// Persist the migration so it doesn't re-run on every load.
-		// Note: plan files on disk keep their old sequential-index names
-		// (00-, 01-, …). Completed phases' plans are not re-read; pending
-		// phases get new seeds written at the stable-numbered paths by Init.
+		needsSave = true
+	}
+
+	if sourcePath != s.StatePath() {
+		needsSave = true
+	}
+
+	if needsSave {
 		if err := s.Save(); err != nil {
 			return nil, fmt.Errorf("saving migrated state: %w", err)
 		}
@@ -181,8 +469,8 @@ func LoadState(apiName string) (*PipelineState, error) {
 
 // StateExists returns true if a state file exists.
 func StateExists(apiName string) bool {
-	_, err := os.Stat(StatePath(apiName))
-	return err == nil
+	_, ok := resolveStatePath(apiName)
+	return ok
 }
 
 // Start marks a phase as executing.
@@ -254,6 +542,33 @@ func (s *PipelineState) Fail(phase string) {
 	p := s.Phases[phase]
 	p.Status = StatusFailed
 	s.Phases[phase] = p
+}
+
+func (s *PipelineState) EffectiveWorkingDir() string {
+	if s.WorkingDir != "" {
+		return s.WorkingDir
+	}
+	return s.OutputDir
+}
+
+func (s *PipelineState) StatePath() string {
+	return RunStatePath(s.RunID)
+}
+
+func (s *PipelineState) PipelineDir() string {
+	return RunPipelineDir(s.RunID)
+}
+
+func (s *PipelineState) ResearchDir() string {
+	return RunResearchDir(s.RunID)
+}
+
+func (s *PipelineState) ProofsDir() string {
+	return RunProofsDir(s.RunID)
+}
+
+func (s *PipelineState) ManifestPath() string {
+	return RunManifestPath(s.RunID)
 }
 
 // NextPhase returns the name of the next incomplete phase, or "".

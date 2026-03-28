@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
+
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 )
 
 // DefaultOutputDir returns the default output directory for a given API name.
 // All commands should use this when --output is not specified.
 func DefaultOutputDir(apiName string) string {
-	return filepath.Join("library", apiName+"-cli")
+	return filepath.Join(PublishedLibraryRoot(), naming.CLI(apiName))
 }
 
 // ClaimOutputDir atomically claims an output directory. If base already exists,
@@ -62,9 +65,15 @@ func Init(apiName string, opts Options) (*PipelineState, error) {
 		return LoadState(apiName)
 	}
 
+	runID, err := newRunID(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	scope := WorkspaceScope()
+
 	outputDir := opts.OutputDir
 	if outputDir == "" {
-		outputDir = DefaultOutputDir(apiName)
+		outputDir = WorkingCLIDir(apiName, runID)
 	}
 
 	absOutputDir, err := filepath.Abs(outputDir)
@@ -72,9 +81,8 @@ func Init(apiName string, opts Options) (*PipelineState, error) {
 		return nil, fmt.Errorf("resolving output dir: %w", err)
 	}
 
-	pipeDir := PipelineDir(apiName)
 	if StateExists(apiName) && !opts.Force {
-		return nil, fmt.Errorf("pipeline for %q already exists at %s (use --force to overwrite or --resume to continue)", apiName, pipeDir)
+		return nil, fmt.Errorf("pipeline for %q already exists at %s (use --force to overwrite or --resume to continue)", apiName, PipelineDir(apiName))
 	}
 
 	specURL, specSource, err := DiscoverSpec(apiName)
@@ -82,9 +90,10 @@ func Init(apiName string, opts Options) (*PipelineState, error) {
 		return nil, fmt.Errorf("discovering spec: %w", err)
 	}
 
-	state := NewState(apiName, absOutputDir)
+	state := NewStateWithRun(apiName, absOutputDir, runID, scope)
 	state.SpecURL = specURL
 
+	pipeDir := state.PipelineDir()
 	if err := os.MkdirAll(pipeDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating pipeline dir: %w", err)
 	}

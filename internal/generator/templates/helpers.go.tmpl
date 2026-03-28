@@ -101,7 +101,7 @@ func classifyAPIError(err error) error {
 		fmt.Fprintln(os.Stderr, "already exists (no-op)")
 		return nil
 	case strings.Contains(msg, "HTTP 401") || strings.Contains(msg, "HTTP 403"):
-		return authErr(fmt.Errorf("%w\nhint: check your API credentials. Run '{{.Name}}-cli doctor' to verify auth, or set the required environment variable", err))
+		return authErr(fmt.Errorf("%w\nhint: check your API credentials. Run '{{.Name}}-pp-cli doctor' to verify auth, or set the required environment variable", err))
 	case strings.Contains(msg, "HTTP 404"):
 		return notFoundErr(fmt.Errorf("%w\nhint: resource not found. Run the 'list' command to see available items", err))
 	case strings.Contains(msg, "HTTP 429"):

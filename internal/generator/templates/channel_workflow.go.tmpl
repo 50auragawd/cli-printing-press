@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -37,10 +37,10 @@ func newWorkflowArchiveCmd(flags *rootFlags) *cobra.Command {
 local SQLite database. Supports incremental sync (only new data since last run)
 and full resync. After archiving, use 'search' for instant full-text search.`,
 		Example: `  # Archive all resources
-  {{.Name}}-cli workflow archive
+  {{.Name}}-pp-cli workflow archive
 
   # Full re-archive (ignore previous sync state)
-  {{.Name}}-cli workflow archive --full`,
+  {{.Name}}-pp-cli workflow archive --full`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := flags.newClient()
 			if err != nil {
@@ -49,7 +49,7 @@ and full resync. After archiving, use 'search' for instant full-text search.`,
 			c.NoCache = true
 
 			if dbPath == "" {
-				dbPath = defaultDBPath("{{.Name}}-cli")
+				dbPath = defaultDBPath("{{.Name}}-pp-cli")
 			}
 			s, err := store.Open(dbPath)
 			if err != nil {
@@ -137,7 +137,7 @@ and full resync. After archiving, use 'search' for instant full-text search.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-cli/store.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-pp-cli/store.db)")
 	cmd.Flags().BoolVar(&full, "full", false, "Full re-archive (ignore previous sync state)")
 
 	return cmd
@@ -150,13 +150,13 @@ func newWorkflowStatusCmd(flags *rootFlags) *cobra.Command {
 		Use:   "status",
 		Short: "Show local archive status and sync state for all resources",
 		Example: `  # Show archive status
-  {{.Name}}-cli workflow status
+  {{.Name}}-pp-cli workflow status
 
   # Show status as JSON
-  {{.Name}}-cli workflow status --json`,
+  {{.Name}}-pp-cli workflow status --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
-				dbPath = defaultDBPath("{{.Name}}-cli")
+				dbPath = defaultDBPath("{{.Name}}-pp-cli")
 			}
 			s, err := store.Open(dbPath)
 			if err != nil {

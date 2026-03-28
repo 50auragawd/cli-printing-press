@@ -19,20 +19,22 @@ type PlanContext struct {
 // all available prior phase outputs. Falls back to static seed if no
 // dynamic generation is available for that phase.
 func GenerateNextPlan(state *PipelineState, nextPhase string) (string, error) {
-	pipeDir := PipelineDir(state.APIName)
+	pipeDir := state.PipelineDir()
 	ctx := PlanContext{
 		SeedData: SeedData{
 			APIName:     state.APIName,
-			OutputDir:   state.OutputDir,
+			OutputDir:   state.EffectiveWorkingDir(),
 			SpecURL:     state.SpecURL,
 			PipelineDir: pipeDir,
 		},
 	}
 
-	// Load all available prior phase outputs (silently ignore missing ones)
-	ctx.Research, _ = LoadResearch(pipeDir)
-	ctx.Dogfood, _ = LoadDogfoodResults(pipeDir)
-	ctx.Scorecard, _ = LoadScorecard(pipeDir)
+	// Load all available prior phase outputs (silently ignore missing ones).
+	// New runstate layout stores research in research/ and audits in proofs/,
+	// with pipeline/ retained as a compatibility fallback.
+	ctx.Research, _ = loadResearchForPlanState(state)
+	ctx.Dogfood, _ = loadDogfoodForPlanState(state)
+	ctx.Scorecard, _ = loadScorecardForPlanState(state)
 	ctx.Learnings, _ = LoadLearnings()
 
 	switch nextPhase {
@@ -247,4 +249,34 @@ func writePipelineContext(b *strings.Builder, sd SeedData) {
 	b.WriteString(fmt.Sprintf("- Pipeline directory: %s\n", sd.PipelineDir))
 	b.WriteString(fmt.Sprintf("- Output directory: %s\n", sd.OutputDir))
 	b.WriteString(fmt.Sprintf("- Spec URL: %s\n\n", sd.SpecURL))
+}
+
+func loadResearchForPlanState(state *PipelineState) (*ResearchResult, error) {
+	for _, dir := range []string{state.ResearchDir(), state.PipelineDir()} {
+		research, err := LoadResearch(dir)
+		if err == nil {
+			return research, nil
+		}
+	}
+	return nil, fmt.Errorf("research not found")
+}
+
+func loadDogfoodForPlanState(state *PipelineState) (*DogfoodReport, error) {
+	for _, dir := range []string{state.ProofsDir(), state.PipelineDir(), state.EffectiveWorkingDir()} {
+		report, err := LoadDogfoodResults(dir)
+		if err == nil {
+			return report, nil
+		}
+	}
+	return nil, fmt.Errorf("dogfood results not found")
+}
+
+func loadScorecardForPlanState(state *PipelineState) (*Scorecard, error) {
+	for _, dir := range []string{state.ProofsDir(), state.PipelineDir()} {
+		scorecard, err := LoadScorecard(dir)
+		if err == nil {
+			return scorecard, nil
+		}
+	}
+	return nil, fmt.Errorf("scorecard not found")
 }

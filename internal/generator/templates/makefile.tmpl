@@ -1,7 +1,7 @@
 .PHONY: build test lint install clean
 
 build:
-	go build -o bin/{{.Name}}-cli ./cmd/{{.Name}}-cli
+	go build -o bin/{{.Name}}-pp-cli ./cmd/{{.Name}}-pp-cli
 
 test:
 	go test ./...
@@ -10,7 +10,7 @@ lint:
 	golangci-lint run
 
 install:
-	go install ./cmd/{{.Name}}-cli
+	go install ./cmd/{{.Name}}-pp-cli
 
 clean:
 	rm -rf bin/

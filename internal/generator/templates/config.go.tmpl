@@ -44,7 +44,7 @@ func Load(configPath string) (*Config, error) {
 	}
 	if path == "" {
 		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, ".config", "{{.Name}}-cli", "config.{{.Config.Format}}")
+		path = filepath.Join(home, ".config", "{{.Name}}-pp-cli", "config.{{.Config.Format}}")
 	}
 	cfg.Path = path
 

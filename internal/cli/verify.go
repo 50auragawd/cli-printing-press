@@ -34,19 +34,19 @@ Otherwise, a mock server is started from the OpenAPI spec.
 
 Use --fix to auto-patch common failures and re-test (max 3 iterations).`,
 		Example: `  # Test against real API (read-only GETs only)
-  printing-press verify --dir ./github-cli --spec /tmp/spec.json --api-key $GITHUB_TOKEN
+  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --api-key $GITHUB_TOKEN
 
   # Test against mock server (no API key needed)
-  printing-press verify --dir ./github-cli --spec /tmp/spec.json
+  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json
 
   # Auto-fix failures and re-test
-  printing-press verify --dir ./github-cli --spec /tmp/spec.json --fix
+  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --fix
 
   # Remove transient build artifacts after the final verification pass
-  printing-press verify --dir ./github-cli --spec /tmp/spec.json --cleanup
+  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --cleanup
 
   # Set pass threshold and output JSON
-  printing-press verify --dir ./github-cli --spec /tmp/spec.json --threshold 70 --json`,
+  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --threshold 70 --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := pipeline.VerifyConfig{
 				Dir:       dir,

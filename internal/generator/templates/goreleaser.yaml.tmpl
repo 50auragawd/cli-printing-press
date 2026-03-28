@@ -1,15 +1,15 @@
 version: 2
-project_name: {{.Name}}-cli
+project_name: {{.Name}}-pp-cli
 changelog:
   disable: true
 builds:
-  - id: {{.Name}}-cli
-    main: ./cmd/{{.Name}}-cli
-    binary: {{.Name}}-cli
+  - id: {{.Name}}-pp-cli
+    main: ./cmd/{{.Name}}-pp-cli
+    binary: {{.Name}}-pp-cli
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X github.com/{{.Owner}}/{{.Name}}-cli/internal/cli.version={{"{{"}} .Version {{"}}"}}
+      - -s -w -X github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/cli.version={{"{{"}} .Version {{"}}"}}
     targets:
       - darwin_amd64
       - darwin_arm64
@@ -42,14 +42,14 @@ archives:
 checksum:
   name_template: checksums.txt
 brews:
-  - name: {{.Name}}-cli
+  - name: {{.Name}}-pp-cli
     repository:
       owner: {{.Owner}}
       name: homebrew-tap
-    homepage: "https://github.com/{{.Owner}}/{{.Name}}-cli"
+    homepage: "https://github.com/{{.Owner}}/{{.Name}}-pp-cli"
     description: "{{.Description}}"
     install: |
-      bin.install "{{.Name}}-cli"
+      bin.install "{{.Name}}-pp-cli"
 {{- if .VisionSet.MCP}}
       bin.install "{{.Name}}-mcp"
 {{- end}}

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/config"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/config"
 )
 
 type Client struct {
@@ -44,7 +44,7 @@ func (e *APIError) Error() string {
 
 func New(cfg *config.Config, timeout time.Duration) *Client {
 	homeDir, _ := os.UserHomeDir()
-	cacheDir := filepath.Join(homeDir, ".cache", "{{.Name}}-cli")
+	cacheDir := filepath.Join(homeDir, ".cache", "{{.Name}}-pp-cli")
 	return &Client{
 		BaseURL:    strings.TrimRight(cfg.BaseURL, "/"),
 		Config:     cfg,
@@ -159,7 +159,7 @@ func (c *Client) do(method, path string, params map[string]string, body any) (js
 		if bodyBytes != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		req.Header.Set("User-Agent", "{{.Name}}-cli/{{.Version}}")
+		req.Header.Set("User-Agent", "{{.Name}}-pp-cli/{{.Version}}")
 
 		if params != nil {
 			q := req.URL.Query()

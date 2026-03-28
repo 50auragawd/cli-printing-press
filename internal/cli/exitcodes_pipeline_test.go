@@ -27,10 +27,13 @@ func TestPrintCmd_AlreadyExists_ExitCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chdir(orig) })
+	t.Setenv("PRINTING_PRESS_HOME", filepath.Join(tmp, ".printing-press"))
+	t.Setenv("PRINTING_PRESS_SCOPE", "test-scope")
+	t.Setenv("PRINTING_PRESS_REPO_ROOT", tmp)
 
 	// Create a fake state file so StateExists returns true.
 	apiName := "exitcode-test"
-	pipeDir := filepath.Join("docs", "plans", apiName+"-pipeline")
+	pipeDir := pipeline.PipelineDir(apiName)
 	if err := os.MkdirAll(pipeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +91,9 @@ func TestPipelineInitDiscoverSpec_ErrorSubstring(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chdir(orig) })
+	t.Setenv("PRINTING_PRESS_HOME", filepath.Join(tmp, ".printing-press"))
+	t.Setenv("PRINTING_PRESS_SCOPE", "test-scope")
+	t.Setenv("PRINTING_PRESS_REPO_ROOT", tmp)
 
 	// Use a name that won't match any known spec and will fail discovery.
 	_, initErr := pipeline.Init("zzz-nonexistent-api-exitcode-test", pipeline.Options{})

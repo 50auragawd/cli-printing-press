@@ -1,4 +1,4 @@
-# {{.Name}}-cli
+# {{.Name}}-pp-cli
 
 {{.Description}}
 
@@ -7,18 +7,18 @@
 ### Homebrew
 
 ```
-brew install {{.Owner}}/tap/{{.Name}}-cli
+brew install {{.Owner}}/tap/{{.Name}}-pp-cli
 ```
 
 ### Go
 
 ```
-go install github.com/{{.Owner}}/{{.Name}}-cli/cmd/{{.Name}}-cli@latest
+go install github.com/{{.Owner}}/{{.Name}}-pp-cli/cmd/{{.Name}}-pp-cli@latest
 ```
 
 ### Binary
 
-Download from [Releases](https://github.com/{{.Owner}}/{{.Name}}-cli/releases).
+Download from [Releases](https://github.com/{{.Owner}}/{{.Name}}-pp-cli/releases).
 
 ## Quick Start
 
@@ -29,11 +29,11 @@ export {{index .Auth.EnvVars 0}}="your-key-here"
 {{- end}}
 
 # {{if .Auth.EnvVars}}2{{else}}1{{end}}. Verify everything works
-{{.Name}}-cli doctor
+{{.Name}}-pp-cli doctor
 
 # 3. Start using it
 {{- range $name, $resource := .Resources}}
-{{$.Name}}-cli {{$name}} --help
+{{$.Name}}-pp-cli {{$name}} --help
 {{- break}}
 {{- end}}
 ```
@@ -48,7 +48,7 @@ export {{index .Auth.EnvVars 0}}="your-key-here"
 
 {{$resource.Description}}
 {{range $eName, $endpoint := $resource.Endpoints}}
-- **`{{$.Name}}-cli {{$name}} {{$eName}}`** - {{$endpoint.Description}}
+- **`{{$.Name}}-pp-cli {{$name}} {{$eName}}`** - {{$endpoint.Description}}
 {{- end}}
 {{end}}
 
@@ -56,19 +56,19 @@ export {{index .Auth.EnvVars 0}}="your-key-here"
 
 ```bash
 # Human-readable table (default)
-{{.Name}}-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list
+{{.Name}}-pp-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list
 
 # JSON for scripting and agents
-{{.Name}}-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --json
+{{.Name}}-pp-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --json
 
 # Filter specific fields
-{{.Name}}-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --json --select id,name,status
+{{.Name}}-pp-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --json --select id,name,status
 
 # Plain tab-separated for piping
-{{.Name}}-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --plain
+{{.Name}}-pp-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --plain
 
 # Dry run (show request without sending)
-{{.Name}}-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --dry-run
+{{.Name}}-pp-cli {{range $name, $_ := .Resources}}{{$name}}{{break}}{{end}} list --dry-run
 ```
 
 ## Agent Usage
@@ -81,7 +81,7 @@ This CLI is designed for AI agent consumption:
 - **Previewable** - `--dry-run` shows the request without sending
 - **Retryable** - creates return "already exists" on retry, deletes return "already deleted"
 - **Confirmable** - `--yes` for explicit confirmation of destructive actions
-- **Piped input** - `echo '{"key":"value"}' | {{.Name}}-cli <resource> create --stdin`
+- **Piped input** - `echo '{"key":"value"}' | {{.Name}}-pp-cli <resource> create --stdin`
 - **Cacheable** - GET responses cached for 5 minutes, bypass with `--no-cache`
 - **Agent-safe by default** - no colors or formatting unless `--human-friendly` is set
 - **Progress events** - paginated commands emit NDJSON events to stderr in default mode
@@ -91,7 +91,7 @@ Exit codes: `0` success, `2` usage error, `3` not found, `4` auth error, `5` API
 ## Health Check
 
 ```bash
-{{.Name}}-cli doctor
+{{.Name}}-pp-cli doctor
 ```
 
 <!-- DOCTOR_OUTPUT -->
@@ -108,7 +108,7 @@ Environment variables:
 ## Troubleshooting
 
 **Authentication errors (exit code 4)**
-- Run `{{.Name}}-cli doctor` to check credentials
+- Run `{{.Name}}-pp-cli doctor` to check credentials
 {{- if .Auth.EnvVars}}
 - Verify the environment variable is set: `echo ${{index .Auth.EnvVars 0}}`
 {{- end}}

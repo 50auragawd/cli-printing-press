@@ -28,6 +28,32 @@ Score generated CLIs against the Steinberger bar. Supports rescoring, scoring by
 - Go 1.21+ installed
 - Running from inside the cli-printing-press repo (or a worktree of it)
 
+## Step 0: Resolve Repo Root
+
+Before any other commands, resolve and cd to the repo root. This ensures all relative paths work even from subdirectories or worktrees:
+
+<!-- PRESS_SETUP_CONTRACT_START -->
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+PRESS_BASE="$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]/-/g; s/^-+//; s/-+$//')"
+if [ -z "$PRESS_BASE" ]; then
+  PRESS_BASE="workspace"
+fi
+PRESS_SCOPE="$PRESS_BASE-$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
+PRESS_HOME="$HOME/.printing-press"
+PRESS_RUNSTATE="$PRESS_HOME/.runstate/$PRESS_SCOPE"
+PRESS_CURRENT="$PRESS_RUNSTATE/current"
+PRESS_LIBRARY="$PRESS_HOME/library"
+PRESS_MANUSCRIPTS="$PRESS_HOME/manuscripts"
+```
+<!-- PRESS_SETUP_CONTRACT_END -->
+
+If `git rev-parse` fails, you are not inside a cli-printing-press checkout. Stop and tell the user.
+
+Current-run state is resolved from `$PRESS_RUNSTATE`. Published CLIs are resolved from `$PRESS_LIBRARY`. Archived manuscripts are resolved from `$PRESS_MANUSCRIPTS`.
+
 ## Step 1: Parse Arguments
 
 Read the user's input after `/printing-press-score`. The input is **free-form** — interpret intent, don't enforce syntax.
@@ -49,36 +75,40 @@ Treat it as a path (absolute or relative). Verify the directory exists.
 
 ### If the token is a plain name
 Try these locations in order:
-1. `library/<name>/` — exact match
-2. `library/<name>-cli/` — with -cli suffix
+1. `$PRESS_LIBRARY/<name>/` — exact match
+2. `$PRESS_LIBRARY/<name>-pp-cli/` — with -pp-cli suffix
+3. If neither exists, Glob `$PRESS_LIBRARY/<name>-pp-cli*`
+4. If exactly one glob match exists and is a directory, use it
+5. If multiple glob matches exist, present a numbered menu using AskUserQuestion
 
-If neither exists, scan pipeline state files:
-3. Use Glob to find `docs/plans/*-pipeline/state.json` files
-4. Read each, look for an `output_dir` value whose basename contains the name
-5. If found and the directory exists, use it
+If neither exists, scan current-run and archived state:
+6. Use Glob to find `$PRESS_RUNSTATE/runs/*/state.json` files
+7. Read each, look for an `output_dir` or `working_dir` value whose basename contains the name
+8. If found and the directory exists, use it
 
 If nothing resolves, report the error: "Could not find CLI '<name>'. Provide a path or check the name."
 
 ### Rescore Current (0 tokens)
-1. Use Glob to find all `docs/plans/*-pipeline/state.json` files
-2. Read each to get `api_name` and `output_dir`
-3. Filter to those whose `output_dir` actually exists on disk
-4. If exactly one → use it automatically
-5. If multiple → present a numbered menu using AskUserQuestion:
+1. Use Glob to find all `$PRESS_CURRENT/*.json` files
+2. Read each to get `api_name`, `state_path`, and `working_dir`
+3. Filter to those whose `working_dir` actually exists on disk
+4. If none are found, Glob `$PRESS_LIBRARY/*-pp-cli*` and use those directories instead
+5. If exactly one → use it automatically
+6. If multiple → present a numbered menu using AskUserQuestion:
    ```
    Multiple CLIs found. Which one to score?
-   1. stripe-cli (library/stripe-cli)
-   2. notion-cli (library/notion-cli)
-   3. linear-cli (library/linear-cli)
+   1. stripe-pp-cli ($PRESS_LIBRARY/stripe-pp-cli)
+   2. notion-pp-cli ($PRESS_LIBRARY/notion-pp-cli)
+   3. linear-pp-cli ($PRESS_LIBRARY/linear-pp-cli)
    ```
-6. If none found → report: "No generated CLIs found. Provide a name or path."
+7. If none found → report: "No generated CLIs found. Provide a name or path."
 
 ## Step 3: Find Spec for Tier 2 Scoring
 
 For each resolved CLI directory, find the OpenAPI spec:
 
 1. Check `<cli-dir>/spec.json` — the pipeline converts YAML specs to JSON during generation
-2. If not found, scan `docs/plans/*-pipeline/state.json` files for one matching this CLI's directory. Read its `spec_path` field. If that file exists on disk, use it.
+2. If not found, scan `$PRESS_RUNSTATE/runs/*/state.json` files for one matching this CLI's directory. Read its `spec_path` field. If that file exists on disk, use it.
 3. If no spec found, **proceed without `--spec`**. Note to the user: "No spec found — Tier 2 (domain correctness) scores will be 0. Provide a spec path to get full scoring."
 
 ## Step 4: Build the Binary

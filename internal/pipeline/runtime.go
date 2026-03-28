@@ -10,10 +10,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/mvanhorn/cli-printing-press/internal/artifacts"
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 )
 
 // VerifyConfig configures a runtime verification run.
@@ -93,8 +95,7 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 	// 4. Start mock server if needed
 	var mockServer *httptest.Server
 	var baseURLOverride string
-	apiName := filepath.Base(cfg.Dir)
-	apiName = strings.TrimSuffix(apiName, "-cli")
+	apiName := naming.TrimCLISuffix(filepath.Base(cfg.Dir))
 	envVarName := cfg.EnvVar
 	if envVarName == "" {
 		envVarName = strings.ToUpper(strings.ReplaceAll(apiName, "-", "_")) + "_TOKEN"
@@ -174,19 +175,9 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 func buildCLI(dir string) (string, error) {
 	name := filepath.Base(dir)
 	binaryPath := filepath.Join(dir, name)
-	cmdDir := filepath.Join(dir, "cmd", name)
-	if _, err := os.Stat(cmdDir); os.IsNotExist(err) {
-		// Try without -cli suffix
-		cmdDir = filepath.Join(dir, "cmd", strings.TrimSuffix(name, "-cli"))
-		if _, err := os.Stat(cmdDir); os.IsNotExist(err) {
-			// Try listing cmd/ subdirectories
-			entries, _ := os.ReadDir(filepath.Join(dir, "cmd"))
-			if len(entries) == 1 {
-				cmdDir = filepath.Join(dir, "cmd", entries[0].Name())
-			} else {
-				return "", fmt.Errorf("cannot find cmd/ entry point in %s", dir)
-			}
-		}
+	cmdDir, err := findCLICommandDir(dir)
+	if err != nil {
+		return "", err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -198,6 +189,55 @@ func buildCLI(dir string) (string, error) {
 		return "", fmt.Errorf("go build: %s\n%s", err, string(out))
 	}
 	return binaryPath, nil
+}
+
+func findCLICommandDir(dir string) (string, error) {
+	name := filepath.Base(dir)
+	apiName := naming.TrimCLISuffix(name)
+	candidates := []string{
+		filepath.Join(dir, "cmd", name),
+		filepath.Join(dir, "cmd", naming.CLI(apiName)),
+		filepath.Join(dir, "cmd", naming.LegacyCLI(apiName)),
+		filepath.Join(dir, "cmd", apiName),
+	}
+
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return candidate, nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("stat %s: %w", candidate, err)
+		}
+	}
+
+	entries, err := os.ReadDir(filepath.Join(dir, "cmd"))
+	if err != nil {
+		return "", fmt.Errorf("reading cmd directory: %w", err)
+	}
+
+	var cliEntries []string
+	var dirEntries []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dirEntries = append(dirEntries, entry.Name())
+		if naming.IsCLIDirName(entry.Name()) {
+			cliEntries = append(cliEntries, entry.Name())
+		}
+	}
+
+	sort.Strings(cliEntries)
+	if len(cliEntries) == 1 {
+		return filepath.Join(dir, "cmd", cliEntries[0]), nil
+	}
+
+	if len(dirEntries) == 1 {
+		return filepath.Join(dir, "cmd", dirEntries[0]), nil
+	}
+
+	return "", fmt.Errorf("cannot find CLI cmd entry point in %s", dir)
 }
 
 // discoverCommands parses root.go to find all registered commands.
@@ -222,7 +262,7 @@ func discoverCommands(dir string) []discoveredCommand {
 		seen[name] = true
 		// Skip utility commands
 		switch name {
-		case "version-cli", "version", "completion", "help":
+		case "version-pp-cli", "version-cli", "version", "completion", "help":
 			continue
 		}
 		commands = append(commands, discoveredCommand{Name: name})

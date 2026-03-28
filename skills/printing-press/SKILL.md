@@ -24,7 +24,7 @@ Generate the best CLI that has ever existed for any API. Five mandatory phases. 
 /printing-press Plaid payments API
 /printing-press --spec ./openapi.yaml
 /printing-press Discord codex          # Codex mode: offload code generation to save Opus tokens
-/printing-press emboss ./discord-cli   # Second pass: improve an existing CLI
+/printing-press emboss ./discord-pp-cli   # Second pass: improve an existing CLI
 ```
 
 ## Emboss Mode (Second Pass)
@@ -51,14 +51,14 @@ else:
 **Step 1: AUDIT (5 min)** - Get a baseline without changing anything.
 
 ```bash
-cd ~/cli-printing-press && ./printing-press emboss --dir <cli-dir> --spec <spec-path> --audit-only
+./printing-press emboss --dir <cli-dir> --spec <spec-path> --audit-only
 ```
 
 Read the output. Note the scorecard score, verify pass rate, data pipeline status, and command count. This is the "before" snapshot.
 
 Also read:
 - The CLI's README for what commands exist
-- Any Phase 0-5 artifacts in `docs/plans/` for this API
+- Any archived Phase 0-5 artifacts in `$PRESS_MANUSCRIPTS/<api>/` for this API
 - The CLI's `internal/cli/root.go` to catalog registered commands
 
 **Step 2: RE-RESEARCH (10 min)** - What's changed since v1?
@@ -98,7 +98,7 @@ For each approved improvement:
 **Step 5: RE-VERIFY (5 min)** - Prove it worked.
 
 ```bash
-cd ~/cli-printing-press && ./printing-press emboss --dir <cli-dir> --spec <spec-path> --audit-only
+./printing-press emboss --dir <cli-dir> --spec <spec-path> --audit-only
 ```
 
 Compare the new numbers to the baseline from Step 1.
@@ -106,7 +106,7 @@ Compare the new numbers to the baseline from Step 1.
 **Step 6: REPORT** - Tell the user the delta.
 
 ```
-EMBOSS COMPLETE: <api>-cli
+EMBOSS COMPLETE: <api>-pp-cli
   Scorecard: <before> -> <after> (+<delta>)
   Verify:    <before>% -> <after>% (+<delta>%)
   Commands:  <before> -> <after> (+<delta>)
@@ -173,7 +173,7 @@ CONSTRAINTS:
 
 VERIFY: After changes, run: go build ./... && go vet ./..."
 
-cd ~/cli-printing-press && echo "$CODEX_PROMPT" | codex exec --yolo -
+echo "$CODEX_PROMPT" | codex exec --yolo -
 ```
 
 3. **Claude reviews the result:** Before anything else, verify the target file still exists and is non-empty (`wc -l <file>`). Codex can delete or empty files instead of rewriting them — if the file is gone or empty, that's an immediate failure. Then verify: in-scope changes, compiles (`go build && go vet`). If lint/format fails, auto-fix.
@@ -195,8 +195,36 @@ cd ~/cli-printing-press && echo "$CODEX_PROMPT" | codex exec --yolo -
 ## Prerequisites
 
 - Go 1.21+ installed
-- The printing-press repo at `~/cli-printing-press`
-- Build binary if missing: `cd ~/cli-printing-press && go build -o ./printing-press ./cmd/printing-press`
+- Running from inside the cli-printing-press repo (or a worktree of it)
+- Build binary if missing: `go build -o ./printing-press ./cmd/printing-press`
+
+## Setup: Resolve Repo Root
+
+Before any other commands, resolve and cd to the repo root. This ensures all relative paths work even from subdirectories or worktrees:
+
+<!-- PRESS_SETUP_CONTRACT_START -->
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+PRESS_BASE="$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]/-/g; s/^-+//; s/-+$//')"
+if [ -z "$PRESS_BASE" ]; then
+  PRESS_BASE="workspace"
+fi
+PRESS_SCOPE="$PRESS_BASE-$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
+PRESS_HOME="$HOME/.printing-press"
+PRESS_RUNSTATE="$PRESS_HOME/.runstate/$PRESS_SCOPE"
+PRESS_LIBRARY="$PRESS_HOME/library"
+PRESS_MANUSCRIPTS="$PRESS_HOME/manuscripts"
+PRESS_CURRENT="$PRESS_RUNSTATE/current"
+
+mkdir -p "$PRESS_RUNSTATE" "$PRESS_LIBRARY" "$PRESS_MANUSCRIPTS" "$PRESS_CURRENT"
+```
+<!-- PRESS_SETUP_CONTRACT_END -->
+
+If `git rev-parse` fails, you are not inside a cli-printing-press checkout. Stop and tell the user.
+
+Active managed runs write into checkout-scoped `$PRESS_RUNSTATE/`. Published CLIs are written to global `$PRESS_LIBRARY/`. Archived research and phase artifacts are written to global `$PRESS_MANUSCRIPTS/<api>/<run-id>/`. Nothing is written to the repo, and parallel worktrees do not share mutable output paths.
 
 ## Phase 0.1: API KEY AUTO-DETECTION
 
@@ -248,16 +276,21 @@ Total expected time: 50-95 minutes. Phase 4.5 tests every command against spec-d
 
 **7 Plan Artifacts Per Run:**
 
-Every phase gate produces a comprehensive plan document in `~/cli-printing-press/docs/plans/`:
+Use the same `$STAMP` value for every artifact in a single run. Do NOT use date-only filenames; repeated runs on the same day must not overwrite each other.
+
+Every phase gate produces a document in the current run directory (`$API_RUN_DIR`), and the finished set is archived under `$PRESS_MANUSCRIPTS/<api>/<run-id>/`:
 
 ```
-Phase 0   -> <today>-feat-<api>-cli-visionary-research.md
-Phase 0.5 -> <today>-feat-<api>-cli-power-user-workflows.md
-Phase 0.7 -> <today>-feat-<api>-cli-data-layer-spec.md
-Phase 1   -> <today>-feat-<api>-cli-research.md
-Phase 3   -> <today>-fix-<api>-cli-audit.md
-Phase 4   -> <today>-fix-<api>-cli-goat-build-log.md
-Phase 4.5 -> <today>-fix-<api>-cli-dogfood-report.md
+research/
+  Phase 0   -> <stamp>-feat-<api>-pp-cli-visionary-research.md
+  Phase 0.5 -> <stamp>-feat-<api>-pp-cli-power-user-workflows.md
+  Phase 0.7 -> <stamp>-feat-<api>-pp-cli-data-layer-spec.md
+  Phase 1   -> <stamp>-feat-<api>-pp-cli-research.md
+
+proofs/
+  Phase 3   -> <stamp>-fix-<api>-pp-cli-audit.md
+  Phase 4   -> <stamp>-fix-<api>-pp-cli-goat-build-log.md
+  Phase 4.5 -> <stamp>-fix-<api>-pp-cli-dogfood-report.md
 ```
 
 Each artifact chains into the next. **Read the previous phase's artifact before starting the next phase.**
@@ -295,7 +328,7 @@ If /ce:plan is not available, write the artifact yourself with this structure:
 title: "<Phase Name>: <API> CLI"
 type: feat
 status: active
-date: <today>
+date: <stamp>
 phase: "<phase number>"
 api: "<api name>"
 ---
@@ -345,7 +378,31 @@ When the user provides an API name, run ALL five phases.
 
 ### Step 0: Parse intent and check known specs
 
-Extract the API name. Optionally check `~/cli-printing-press/skills/printing-press/references/known-specs.md` for a cached spec URL.
+Extract the API name. Optionally check `skills/printing-press/references/known-specs.md` for a cached spec URL.
+
+After you know `<api>`, initialize run-scoped variables and keep reusing them for the rest of the run:
+
+```bash
+API_RUN_DIR="$PRESS_RUNSTATE/runs/<run-id>"
+RESEARCH_DIR="$API_RUN_DIR/research"
+PROOFS_DIR="$API_RUN_DIR/proofs"
+PIPELINE_DIR="$API_RUN_DIR/pipeline"
+STAMP="$(date +%Y-%m-%d-%H%M%S)"
+
+mkdir -p "$RESEARCH_DIR" "$PROOFS_DIR" "$PIPELINE_DIR"
+STATE_FILE="$API_RUN_DIR/state.json"
+```
+
+Maintain a lightweight state file at `$STATE_FILE` so `/printing-press-score` can rediscover the current run. It should always contain:
+
+```json
+{
+  "api_name": "<api>",
+  "working_dir": "<absolute cli dir>",
+  "output_dir": "<absolute cli dir>",
+  "spec_path": "<absolute spec path if known>"
+}
+```
 
 If found in registry: note the URL as a hint for Phase 1, but STILL run full research.
 If not found: Phase 1 searches for the spec. This is the normal path - most APIs won't be in the registry.
@@ -498,7 +555,7 @@ Score < 8: **Won't-have.** Skip or future work.
 
 ### Step 0g: Write the Visionary Research Artifact
 
-**Write** to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-visionary-research.md`:
+**Write** to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-visionary-research.md`:
 
 ```markdown
 ## Visionary Research: <API> CLI
@@ -517,7 +574,7 @@ Score < 8: **Won't-have.** Skip or future work.
 - ...
 
 ### Workflows
-1. <name>: <steps> -> Proposed: `<api>-cli <command>`
+1. <name>: <steps> -> Proposed: `<api>-pp-cli <command>`
 2. ...
 
 ### Architecture Decisions
@@ -542,7 +599,7 @@ Score < 8: **Won't-have.** Skip or future work.
 5. Architecture decisions match data profile
 6. Top 5 features scored and ranked
 
-**Write Phase 0 Artifact:** Run the Artifact Writing plan generator (see top of skill) with all Phase 0 research as input. Write to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-visionary-research.md`. Include: API identity, data profile, usage patterns with evidence, tool landscape, architecture decisions, top 5 features with full scoring.
+**Write Phase 0 Artifact:** Run the Artifact Writing plan generator (see top of skill) with all Phase 0 research as input. Write to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-visionary-research.md`. Include: API identity, data profile, usage patterns with evidence, tool landscape, architecture decisions, top 5 features with full scoring.
 
 Tell the user: "Phase 0 complete: Domain: [category]. Data profile: [volume]/[realtime]/[search]. Found [N] non-wrapper tools. Top feature: [name] (score [X]/16). Architecture: [key decision]. Proceeding to power user workflows."
 
@@ -626,7 +683,7 @@ Rules:
 2. ...
 These will be built as real commands in Phase 4, alongside the API wrapper."
 
-**Write Phase 0.5 Artifact:** Run the Artifact Writing plan generator (see top of skill) with all Phase 0.5 analysis as input. Write to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-power-user-workflows.md`. Include: API archetype, all 10-15 workflow ideas, validation results, full scoring table, top 7 with implementation notes.
+**Write Phase 0.5 Artifact:** Run the Artifact Writing plan generator (see top of skill) with all Phase 0.5 analysis as input. Write to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-power-user-workflows.md`. Include: API archetype, all 10-15 workflow ideas, validation results, full scoring table, top 7 with implementation notes.
 
 ---
 
@@ -673,7 +730,7 @@ Every TABLE STAKES feature becomes a Phase 4 Priority 1 work item. They are buil
 
 Tell the user: "Feature parity audit: [N] table-stakes features identified from [competitor names]. Top gaps: [list]. These will be built in Phase 4."
 
-**Write Phase 0.6 Artifact:** Run the Artifact Writing plan generator with all Phase 0.6 analysis as input. Write to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-feature-parity-audit.md`. Include: full feature matrix, classifications with justification, table stakes list for Phase 4.
+**Write Phase 0.6 Artifact:** Run the Artifact Writing plan generator with all Phase 0.6 analysis as input. Write to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-feature-parity-audit.md`. Include: full feature matrix, classifications with justification, table stakes list for Phase 4.
 
 ---
 
@@ -788,7 +845,7 @@ Decide which method this API supports. If WebSocket/SSE, the tail command should
 
 ### Step 0.7e: Write the Data Layer Specification Artifact
 
-**Run the Artifact Writing plan generator** (see top of skill) with all Phase 0.7 analysis as input. Write to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-data-layer-spec.md`.
+**Run the Artifact Writing plan generator** (see top of skill) with all Phase 0.7 analysis as input. Write to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-data-layer-spec.md`.
 
 The artifact MUST include:
 - Entity classification table for every API resource
@@ -875,7 +932,7 @@ Tell the user: "Product thesis: [1-sentence pitch]. Name: [name]. Key differenti
 Before starting Phase 1 research from scratch, check if the user already did research:
 
 ```bash
-ls ~/cli-printing-press/docs/plans/*<api-name>* ~/docs/plans/*<api-name>* 2>/dev/null
+ls "$PRESS_MANUSCRIPTS/<api-name>"/*/research/ "$PRESS_MANUSCRIPTS/<api-name>"/*/proofs/ 2>/dev/null
 ```
 
 If found:
@@ -955,14 +1012,14 @@ The answer must be SPECIFIC. Not just "agent-native." Examples:
 
 ### Step 1.6: Write the research artifact
 
-**Write** to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-research.md`:
+**Write** to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-research.md`:
 
 ```markdown
 ---
 title: "Research: <API> CLI"
 type: feat
 status: active
-date: <today>
+date: <stamp>
 ---
 
 # Research: <API> CLI
@@ -1017,7 +1074,7 @@ date: <today>
 4. Strategic justification answers "why should this exist?"
 5. Target command count is set
 
-**Write Phase 1 Artifact:** Run the Artifact Writing plan generator with all Phase 1 research as input. Write to `~/cli-printing-press/docs/plans/<today>-feat-<api>-cli-research.md`. Include: spec discovery, deep competitor analysis with quotes, demand signals, strategic justification, target command count.
+**Write Phase 1 Artifact:** Run the Artifact Writing plan generator with all Phase 1 research as input. Write to `$RESEARCH_DIR/<stamp>-feat-<api>-pp-cli-research.md`. Include: spec discovery, deep competitor analysis with quotes, demand signals, strategic justification, target command count.
 
 Tell the user: "Phase 1 complete: Found [spec/no spec], [N] competitors. Best: [name] ([stars] stars, [commands] commands, last commit [date]). Strategic angle: [1-sentence justification]. Proceeding to generation."
 
@@ -1067,10 +1124,10 @@ Before running the generator, check the module path it will use:
 1. Run: `git config user.name` - this becomes the org in the module path
 2. If this doesn't match your actual GitHub username, note the correct one
 3. The module path should be: `github.com/<correct-github-username>/<product-name-from-phase-0.8>`
-4. After generation, verify: `head -1 <api>-pp-cli/go.mod`
+4. After generation, verify: `head -1 "$CLI_DIR/go.mod"`
 5. If wrong, fix with:
    ```bash
-   cd <api>-pp-cli
+   cd "$CLI_DIR"
    go mod edit -module github.com/<org>/<name>
    find . -name '*.go' -exec sed -i '' "s|<old-module>|<new-module>|g" {} +
    go build ./...
@@ -1080,29 +1137,42 @@ Before running the generator, check the module path it will use:
 
 **If OpenAPI spec found:**
 ```bash
-curl -sL -o /tmp/printing-press-spec-<api>.json "<spec-url>" && head -c 200 /tmp/printing-press-spec-<api>.json
+SPEC_PATH="/tmp/printing-press-spec-<api>.json"
+curl -sL -o "$SPEC_PATH" "<spec-url>" && head -c 200 "$SPEC_PATH"
 ```
 
 **If no spec (write from docs):**
 1. **WebFetch** the API docs
-2. **Read** `~/cli-printing-press/skills/printing-press/references/spec-format.md`
-3. Write YAML spec to `/tmp/<api>-spec.yaml` with ALL endpoints
+2. **Read** `skills/printing-press/references/spec-format.md`
+3. Set `SPEC_PATH="/tmp/<api>-spec.yaml"` and write YAML spec there with ALL endpoints
 4. Include auth config matching research findings
 
-### Step 2.2: Check for existing output, remove if exists
+Immediately after `SPEC_PATH` is known, update `$STATE_FILE` with `api_name` and `spec_path`. Leave `output_dir` empty until the generator claims it.
+
+### Step 2.2: Claim a unique output directory for this run
 
 ```bash
-cd ~/cli-printing-press && rm -rf library/<api>-cli 2>/dev/null; echo "CLEAN"
+OUTPUT_BASE="$PRESS_LIBRARY/<api>-pp-cli"
+CLI_DIR="$OUTPUT_BASE"
+i=2
+while [ -e "$CLI_DIR" ]; do
+  CLI_DIR="${OUTPUT_BASE}-$i"
+  i=$((i + 1))
+done
+echo "$CLI_DIR"
 ```
 
 ### Step 2.3: Run the generator
 
 ```bash
-cd ~/cli-printing-press && ./printing-press generate \
-  --spec /tmp/printing-press-spec-<api>.json \
-  --output ./library/<api>-cli \
-  --force --lenient --validate 2>&1
+GEN_LOG="/tmp/<api>-generate-$STAMP.log"
+./printing-press generate \
+  --spec "$SPEC_PATH" \
+  --output "$CLI_DIR" \
+  --lenient --validate 2>&1 | tee "$GEN_LOG"
 ```
+
+If generation succeeds, immediately update `$STATE_FILE` with `api_name`, `spec_path`, and `output_dir="$CLI_DIR"`.
 
 ### Step 2.4: Note skipped complex body fields
 
@@ -1110,7 +1180,7 @@ cd ~/cli-printing-press && ./printing-press generate \
 
 Run:
 ```bash
-cd ~/cli-printing-press && ./printing-press generate --spec /tmp/printing-press-spec-<api>.json --output ./library/<api>-cli --force --lenient --validate 2>&1 | grep "skipping body field"
+grep "skipping body field" "$GEN_LOG"
 ```
 
 Save the list of skipped fields. These are NOT acceptable limitations - they are work items for Phase 4.
@@ -1126,7 +1196,7 @@ The generated client may pin to an outdated API version. Fix it:
 1. Check what version the API docs say to use (search the API's changelog or docs)
 2. Check the generated client's version header:
    ```bash
-   grep -n "Version" <api>-pp-cli/internal/client/client.go
+   grep -n "Version" "$CLI_DIR/internal/client/client.go"
    ```
 3. If the API uses date-based version headers (like Notion, Stripe), use the LATEST documented version, not the spec's version field or the generator's template default.
 4. **Check for per-endpoint versioning.** Some APIs (e.g., Cal.com) use different version headers per resource — bookings may require `2024-08-13` while event-types requires `2024-06-14`. Test at least 2 different resource endpoints with the same version header. If one returns 404 or errors while the other succeeds, the API uses per-endpoint versioning. Implement routing logic in client.go:
@@ -1147,7 +1217,7 @@ The generated client may pin to an outdated API version. Fix it:
 The generator creates a config.go that looks for a specific env var name (e.g., `CAL_COM_USER_TOKEN`). This may not match the env var detected in Phase 0.1 (e.g., `CAL_COM_API_KEY`). If they don't match, live testing will fail with "auth: not configured" even though the user has the key set.
 
 1. Check what env var name(s) Phase 0.1 detected or the user provided
-2. Check what env var name config.go looks for: `grep "Getenv" <api>-pp-cli/internal/config/config.go`
+2. Check what env var name config.go looks for: `grep "Getenv" "$CLI_DIR/internal/config/config.go"`
 3. If they differ: patch config.go to accept both names (check the common one first)
 4. Also add any well-known env var names for this API (e.g., for Cal.com: `CAL_COM_API_KEY`, `CAL_API_KEY`, `CALCOM_API_KEY`)
 
@@ -1190,14 +1260,14 @@ This phase has TWO parts: (A) code review for tactical fixes, and (B) Non-Obviou
 
 You MUST **Read** these files (not just check they exist):
 
-- `library/<api>-cli/internal/cli/root.go`
-- `library/<api>-cli/README.md`
+- `$CLI_DIR/internal/cli/root.go`
+- `$CLI_DIR/README.md`
 - At least 3 resource command files
 
 ### Step 3.2: Count commands and compare to target
 
 ```bash
-cd ~/cli-printing-press/library/<api>-cli && grep -r "Use:" internal/cli/*.go | grep -v "root.go" | wc -l
+cd $CLI_DIR && grep -r "Use:" internal/cli/*.go | grep -v "root.go" | wc -l
 ```
 
 Compare against target from Phase 1 research.
@@ -1230,7 +1300,7 @@ For each field skipped by the generator (from Phase 2 Step 2.4):
 Before hand-scoring, run the automated scorecard to get objective baseline numbers:
 
 ```bash
-cd ~/cli-printing-press && ./printing-press scorecard --dir ./library/<api>-cli
+./printing-press scorecard --dir $CLI_DIR
 ```
 
 Use these numbers as the baseline. The hand-scoring in Step 3.7 should explain WHY each dimension got its score, not re-guess the number.
@@ -1290,7 +1360,7 @@ Based on the quality analysis AND the competitor feature matrix, identify:
 
 ### Step 3.9: Write the audit artifact
 
-**Write** to `~/cli-printing-press/docs/plans/<today>-fix-<api>-cli-audit.md`:
+**Write** to `$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-audit.md`:
 
 Include ALL of:
 - Command comparison
@@ -1310,7 +1380,7 @@ Include ALL of:
 4. Complex body fields have a plan (not just "limitation")
 5. Baseline total score is recorded
 
-**Write Phase 3 Artifact:** Run the Artifact Writing plan generator with all Phase 3 analysis as input. Write to `~/cli-printing-press/docs/plans/<today>-fix-<api>-cli-audit.md`. Include: scorecard baseline, full 11-dimension hand-scored table, GOAT improvement plan, complex body field plan, data layer integration notes from Phase 0.7.
+**Write Phase 3 Artifact:** Run the Artifact Writing plan generator with all Phase 3 analysis as input. Write to `$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-audit.md`. Include: scorecard baseline, full 11-dimension hand-scored table, GOAT improvement plan, complex body field plan, data layer integration notes from Phase 0.7.
 
 Tell the user: "Phase 3 complete: Baseline Quality Score: [X]/100 (Grade [X]). Found [N] tactical fixes + [M] GOAT improvements. Top improvement: [description]. Proceeding to GOAT build."
 
@@ -1324,7 +1394,7 @@ Tell the user: "Phase 3 complete: Baseline Quality Score: [X]/100 (Grade [X]). F
 
 **Read the Phase 0.7 Data Layer Specification and Phase 3 Audit artifacts before starting.**
 
-**GraphQL APIs:** For GraphQL APIs, Phase 2 only produced scaffolding (no generated commands). Phase 4 is where ALL commands get written by hand. Use the GraphQL schema + Phase 0.5 workflows + Phase 0.7 data layer spec to determine which queries/mutations to wrap as CLI commands. Each command sends a GraphQL query via the client wrapper. Prioritize workflow commands over CRUD wrappers - a `linear-cli stale --days 30 --team ENG` is more valuable than `linear-cli issues list`.
+**GraphQL APIs:** For GraphQL APIs, Phase 2 only produced scaffolding (no generated commands). Phase 4 is where ALL commands get written by hand. Use the GraphQL schema + Phase 0.5 workflows + Phase 0.7 data layer spec to determine which queries/mutations to wrap as CLI commands. Each command sends a GraphQL query via the client wrapper. Prioritize workflow commands over CRUD wrappers - a `linear-pp-cli stale --days 30 --team ENG` is more valuable than `linear-pp-cli issues list`.
 
 Execute in this priority order. Do NOT skip Priority 0 to go straight to workflows.
 
@@ -1343,7 +1413,7 @@ If CODEX_MODE is true, each Priority 0/1/2/3 task below is a **separate Codex ca
 TASK: Rewrite store.go with domain-specific tables for Discord.
 
 FILES TO MODIFY:
-- discord-cli/internal/store/store.go
+- discord-pp-cli/internal/store/store.go
 
 CURRENT CODE (Open function signature):
 func Open(dbPath string) (*Store, error) { ... }
@@ -1365,7 +1435,7 @@ CONVENTIONS:
 CONSTRAINTS:
 - Do NOT run git commit/push/add
 - Keep under 400 lines (store.go can be longer than typical)
-- Run: cd discord-cli && go build ./... && go vet ./...
+- Run: cd discord-pp-cli && go build ./... && go vet ./...
 ```
 
 ### Priority 0: Data Layer Foundation (from Phase 0.7)
@@ -1476,7 +1546,7 @@ For each rename: update the `Use:` field, rename the file, verify `go build` pas
 Run the scorecard. Fix REAL gaps. DO NOT GAME IT.
 
 ```bash
-cd ~/cli-printing-press && ./printing-press scorecard --dir ./library/<api>-cli
+./printing-press scorecard --dir $CLI_DIR
 ```
 
 **ANTI-GAMING RULES:**
@@ -1526,7 +1596,7 @@ Only after all above priorities are complete:
 ### Step 4.4: Verify compilation
 
 ```bash
-cd ~/cli-printing-press/library/<api>-cli && go build ./... && go vet ./... && echo "ALL FIXES VERIFIED"
+cd $CLI_DIR && go build ./... && go vet ./... && echo "ALL FIXES VERIFIED"
 ```
 
 ### PHASE GATE 4
@@ -1573,7 +1643,7 @@ cd ~/cli-printing-press/library/<api>-cli && go build ./... && go vet ./... && e
 
 All three must pass. Architecture without features is a toy. Features without architecture is a thin wrapper. Quality without either is polished nothing.
 
-**Write Phase 4 Artifact:** Run the Artifact Writing plan generator with all Phase 4 work as input. Write to `~/cli-printing-press/docs/plans/<today>-fix-<api>-cli-goat-build-log.md`. Include: data layer implementation details, workflow commands built, scorecard fixes, what was skipped, before/after scorecard comparison.
+**Write Phase 4 Artifact:** Run the Artifact Writing plan generator with all Phase 4 work as input. Write to `$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-goat-build-log.md`. Include: data layer implementation details, workflow commands built, scorecard fixes, what was skipped, before/after scorecard comparison.
 
 Tell the user: "Phase 4 complete: Built [N] data layer tables + [M] workflow commands, applied [K] scorecard fixes. Data layer: [list tables]. Top workflow: [name]. Compilation verified. Proceeding to dogfood emulation."
 
@@ -1607,7 +1677,7 @@ For each endpoint in the spec, generate a realistic JSON response by reading the
 | Array fields | 2-3 items with the above heuristics |
 | Nested objects | Recursively generate from schema |
 
-Save mocks to `/tmp/<api>-cli-mocks/` for reuse.
+Save mocks to `/tmp/<api>-pp-cli-mocks/` for reuse.
 
 ### Step 4.5b: Score Every Command on 5 Dimensions
 
@@ -1618,7 +1688,7 @@ For each generated command, score 0-10 on each dimension (50 max):
 Run the command with `--dry-run` and inspect the output:
 
 ```bash
-<api>-cli <resource> <action> <required-args> --dry-run 2>&1
+<api>-pp-cli <resource> <action> <required-args> --dry-run 2>&1
 ```
 
 | Check | Points |
@@ -1690,7 +1760,7 @@ Validate every example in --help and README:
 
 ### Step 4.5d: Write the Dogfood Report ("Here's what I learned")
 
-**Run the Artifact Writing plan generator** with all dogfood scoring results as input. Write to `~/cli-printing-press/docs/plans/<today>-fix-<api>-cli-dogfood-report.md`.
+**Run the Artifact Writing plan generator** with all dogfood scoring results as input. Write to `$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-dogfood-report.md`.
 
 The report MUST include three sections:
 
@@ -1828,8 +1898,8 @@ The scorecard measures files. This phase measures behavior. Build the CLI and te
 ### Step 4.8a: Run the Runtime Verifier
 
 ```bash
-cd ~/cli-printing-press && ./printing-press verify \
-  --dir ./library/<api>-cli \
+./printing-press verify \
+  --dir $CLI_DIR \
   --spec /tmp/<api>-spec.json \
   --threshold 80
 ```
@@ -1837,8 +1907,8 @@ cd ~/cli-printing-press && ./printing-press verify \
 If you collected an API key in Phase 0.1, add it:
 
 ```bash
-cd ~/cli-printing-press && ./printing-press verify \
-  --dir ./library/<api>-cli \
+./printing-press verify \
+  --dir $CLI_DIR \
   --spec /tmp/<api>-spec.json \
   --api-key "$<API_ENV_VAR>" \
   --env-var <API_ENV_VAR> \
@@ -2006,7 +2076,7 @@ Tell the user: "Agent readiness review: [PASS/WARN/DEGRADE/SKIPPED]. Blockers: [
 Run the automated scorecard again to measure improvement:
 
 ```bash
-cd ~/cli-printing-press && ./printing-press scorecard --dir ./library/<api>-cli
+./printing-press scorecard --dir $CLI_DIR
 ```
 
 Re-score ALL 10 dimensions. Show the DELTA from the baseline:
@@ -2044,7 +2114,7 @@ Show ALL of these sections:
 
 **1. Summary:**
 ```
-Generated <api>-cli with <N> resources and <M> commands.
+Generated <api>-pp-cli with <N> resources and <M> commands.
 Resources: <comma-separated list>
 ```
 
@@ -2066,22 +2136,22 @@ Remaining gap: <what they have that we don't, or "none">
 
 **4. Example Commands (with complex body examples):**
 ```bash
-cd ~/cli-printing-press/library/<api>-cli
-go install ./cmd/<api>-cli
+cd $CLI_DIR
+go install ./cmd/<api>-pp-cli
 
 export <AUTH_ENV_VAR>="..."
 
 # Basic usage
-<api>-cli --help
-<api>-cli doctor
-<api>-cli <resource> list --json
-<api>-cli <resource> get <realistic-id>
+<api>-pp-cli --help
+<api>-pp-cli doctor
+<api>-pp-cli <resource> list --json
+<api>-pp-cli <resource> get <realistic-id>
 
 # Complex body fields (pipe JSON via stdin)
-echo '<realistic-json>' | <api>-cli <resource> create --stdin
+echo '<realistic-json>' | <api>-pp-cli <resource> create --stdin
 
 # Agent workflow
-<api>-cli <resource> list --json --select id,name | jq -r '.[].id'
+<api>-pp-cli <resource> list --json --select id,name | jq -r '.[].id'
 ```
 
 **5. Spec source and limitations**
@@ -2220,7 +2290,7 @@ After presenting the final report (Phase 5), use AskUserQuestion to ask:
 Options:
 - "Yes, run emboss" -> proceed to Emboss Mode (top of this skill)
 - "No, I'm done" -> end the run
-- "I'll emboss later" -> tell user they can run `/printing-press emboss ./<api>-pp-cli`
+- "I'll emboss later" -> tell user they can run `/printing-press emboss <absolute-path-to-the-generated-cli>`
 
 **WAIT for the user's answer before proceeding.** Do NOT continue or end the run until answered. Emboss is a FOLLOW-UP, not an automatic step. The user decides.
 
@@ -2231,7 +2301,7 @@ Options:
 When no OpenAPI spec exists:
 
 1. **WebFetch** the API docs
-2. **Read** `~/cli-printing-press/skills/printing-press/references/spec-format.md`
+2. **Read** `skills/printing-press/references/spec-format.md`
 3. Read the docs and identify EVERY endpoint
 4. Write YAML spec to `/tmp/<api>-spec.yaml`
 5. Generate from it
@@ -2311,7 +2381,7 @@ These phrases indicate a phase was shortcut. If you catch yourself writing them,
 - "The CLI is already agent-native enough" (The scorecard checks for flags. The agent readiness reviewer checks 7 deeper principles — alias correctness, output routing, delete safety gates, exit code semantics. These are different things. Dispatch it.)
 
 **Module path rule:**
-- The go.mod module path MUST be a valid Go import path with a real org name (e.g., `github.com/mvanhorn/discord-cli`). The literal string `USER` is never acceptable. The generator auto-derives from git config.
+- The go.mod module path MUST be a valid Go import path with a real org name (e.g., `github.com/mvanhorn/discord-pp-cli`). The literal string `USER` is never acceptable. The generator auto-derives from git config.
 
 **Time Budget Guidance:**
 - Phase 0-1 (Research + Parity Audit): 20% of total time

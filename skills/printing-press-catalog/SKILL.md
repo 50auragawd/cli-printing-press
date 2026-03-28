@@ -27,7 +27,33 @@ Browse and install pre-built Go CLIs for popular APIs.
 ## Prerequisites
 
 - Go 1.21+ installed
-- The printing-press repo at ~/cli-printing-press
+- Running from inside the cli-printing-press repo (or a worktree of it)
+
+## Setup
+
+Before any other commands, resolve and cd to the repo root. This ensures all relative paths work even from subdirectories or worktrees:
+
+<!-- PRESS_SETUP_CONTRACT_START -->
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+PRESS_BASE="$(basename "$REPO_ROOT" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]/-/g; s/^-+//; s/-+$//')"
+if [ -z "$PRESS_BASE" ]; then
+  PRESS_BASE="workspace"
+fi
+PRESS_SCOPE="$PRESS_BASE-$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
+PRESS_HOME="$HOME/.printing-press"
+PRESS_RUNSTATE="$PRESS_HOME/.runstate/$PRESS_SCOPE"
+PRESS_LIBRARY="$PRESS_HOME/library"
+
+mkdir -p "$PRESS_RUNSTATE" "$PRESS_LIBRARY"
+```
+<!-- PRESS_SETUP_CONTRACT_END -->
+
+If `git rev-parse` fails, you are not inside a cli-printing-press checkout. Stop and tell the user.
+
+Generated CLIs are published to `$PRESS_LIBRARY/`, not to the repo.
 
 ## Workflows
 
@@ -35,7 +61,7 @@ Browse and install pre-built Go CLIs for popular APIs.
 
 When invoked with no arguments, list all available CLIs grouped by category.
 
-1. Read all YAML files in ~/cli-printing-press/catalog/ using Glob + Read
+1. Read all YAML files in catalog/ using Glob + Read
 2. Parse each file's name, display_name, description, category fields
 3. Group by category and display:
 
@@ -77,31 +103,38 @@ Install any CLI: /printing-press-catalog install <name>
 
 When invoked with `install <name>`:
 
-1. Read ~/cli-printing-press/catalog/<name>.yaml
+1. Read catalog/<name>.yaml
 2. If file doesn't exist, show error: "No catalog entry for '<name>'. Run /printing-press-catalog to see available CLIs."
 3. Extract spec_url from the catalog entry
 4. Show preview: "Installing <display_name> CLI from <spec_url>"
 5. Build the printing-press binary if needed:
    ```bash
-   cd ~/cli-printing-press && go build -o ./printing-press ./cmd/printing-press
+   go build -o ./printing-press ./cmd/printing-press
    ```
 6. Download the spec and generate:
    ```bash
    curl -sL -o /tmp/catalog-spec-$$.yaml "<spec_url>"
-   cd ~/cli-printing-press && ./printing-press generate \
+   OUTPUT_BASE="$PRESS_LIBRARY/<name>-pp-cli"
+   OUTPUT_DIR="$OUTPUT_BASE"
+   i=2
+   while [ -e "$OUTPUT_DIR" ]; do
+     OUTPUT_DIR="${OUTPUT_BASE}-$i"
+     i=$((i + 1))
+   done
+   ./printing-press generate \
      --spec /tmp/catalog-spec-$$.yaml \
-     --output ./library/<name>-cli \
+     --output "$OUTPUT_DIR" \
      --validate
    ```
 7. If all quality gates pass, present the result:
    ```
-   Generated <name>-cli with X resources.
+   Generated <name>-pp-cli with X resources.
 
    Try it:
-     cd library/<name>-cli
-     go install ./cmd/<name>-cli
-     <name>-cli --help
-     <name>-cli doctor
+     cd "$OUTPUT_DIR"
+     go install ./cmd/<name>-pp-cli
+     <name>-pp-cli --help
+     <name>-pp-cli doctor
    ```
 8. If gates fail, show the error and suggest: "Try /printing-press <display_name> API for a custom generation with retry support."
 
@@ -109,7 +142,7 @@ When invoked with `install <name>`:
 
 When invoked with `search <query>`:
 
-1. Read all YAML files in ~/cli-printing-press/catalog/
+1. Read all YAML files in catalog/
 2. Search name, display_name, description, and category for the query (case-insensitive)
 3. Display matching entries
 

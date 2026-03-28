@@ -10,29 +10,29 @@ import (
 
 // ComparativeResult holds the output of the comparative analysis phase.
 type ComparativeResult struct {
-	OurScore       int                `json:"our_score"`
-	Alternatives   []AltScore         `json:"alternatives"`
-	Gaps           []string           `json:"gaps"`
-	Advantages     []string           `json:"advantages"`
-	Recommendation string             `json:"recommendation"` // "ship", "ship-with-gaps", "hold"
+	OurScore       int        `json:"our_score"`
+	Alternatives   []AltScore `json:"alternatives"`
+	Gaps           []string   `json:"gaps"`
+	Advantages     []string   `json:"advantages"`
+	Recommendation string     `json:"recommendation"` // "ship", "ship-with-gaps", "hold"
 }
 
 // AltScore holds a scored alternative.
 type AltScore struct {
-	Name           string `json:"name"`
-	Breadth        int    `json:"breadth"`
-	InstallFriction int   `json:"install_friction"`
-	AuthUX         int    `json:"auth_ux"`
-	OutputFormats  int    `json:"output_formats"`
-	AgentFriendly  int    `json:"agent_friendly"`
-	Freshness      int    `json:"freshness"`
-	Total          int    `json:"total"`
+	Name            string `json:"name"`
+	Breadth         int    `json:"breadth"`
+	InstallFriction int    `json:"install_friction"`
+	AuthUX          int    `json:"auth_ux"`
+	OutputFormats   int    `json:"output_formats"`
+	AgentFriendly   int    `json:"agent_friendly"`
+	Freshness       int    `json:"freshness"`
+	Total           int    `json:"total"`
 }
 
 // RunComparative reads research and dogfood results, scores everything,
 // and writes comparative-analysis.md.
 func RunComparative(pipelineDir string, ourCommandCount int) (*ComparativeResult, error) {
-	research, err := LoadResearch(pipelineDir)
+	research, err := loadResearchForArtifactsDir(pipelineDir)
 	if err != nil {
 		// Research is optional - produce a minimal report
 		research = &ResearchResult{Alternatives: nil}
@@ -177,6 +177,10 @@ func compareGapsAndAdvantages(result *ComparativeResult) (gaps, advantages []str
 }
 
 func writeComparativeReport(result *ComparativeResult, research *ResearchResult, pipelineDir string) error {
+	if err := os.MkdirAll(pipelineDir, 0o755); err != nil {
+		return err
+	}
+
 	var b strings.Builder
 
 	b.WriteString("# Comparative Analysis\n\n")

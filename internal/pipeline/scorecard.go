@@ -159,9 +159,12 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 	// Competitor comparison from research.json
 	sc.CompetitorScores = buildCompetitorScores(sc.Steinberger.Total, pipelineDir)
 
-	// Write scorecard.md
+	// Write scorecard artifacts
 	if err := writeScorecardMD(sc, pipelineDir); err != nil {
 		return sc, fmt.Errorf("writing scorecard.md: %w", err)
+	}
+	if err := writeScorecardJSON(sc, pipelineDir); err != nil {
+		return sc, fmt.Errorf("writing scorecard.json: %w", err)
 	}
 
 	return sc, nil
@@ -1458,8 +1461,8 @@ func buildGapReport(s SteinerScore) []string {
 	return gaps
 }
 
-func buildCompetitorScores(ourTotal int, pipelineDir string) []CompScore {
-	research, err := LoadResearch(pipelineDir)
+func buildCompetitorScores(ourTotal int, artifactDir string) []CompScore {
+	research, err := loadResearchForArtifactsDir(artifactDir)
 	if err != nil {
 		return nil
 	}
@@ -1474,6 +1477,39 @@ func buildCompetitorScores(ourTotal int, pipelineDir string) []CompScore {
 		})
 	}
 	return scores
+}
+
+func loadResearchForArtifactsDir(artifactDir string) (*ResearchResult, error) {
+	parent := filepath.Dir(artifactDir)
+	var candidates []string
+	switch filepath.Base(artifactDir) {
+	case "research":
+		candidates = []string{artifactDir, filepath.Join(parent, "pipeline")}
+	case "proofs", "pipeline":
+		candidates = []string{filepath.Join(parent, "research"), artifactDir, filepath.Join(parent, "pipeline")}
+	default:
+		candidates = []string{artifactDir, filepath.Join(artifactDir, "research"), filepath.Join(artifactDir, "pipeline")}
+	}
+
+	var lastErr error
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		research, err := LoadResearch(candidate)
+		if err == nil {
+			return research, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr == nil {
+		lastErr = os.ErrNotExist
+	}
+	return nil, lastErr
 }
 
 func estimateCompetitorTotal(alt Alternative) int {
@@ -1574,6 +1610,19 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 	}
 
 	return os.WriteFile(filepath.Join(pipelineDir, "scorecard.md"), []byte(b.String()), 0o644)
+}
+
+func writeScorecardJSON(sc *Scorecard, pipelineDir string) error {
+	if err := os.MkdirAll(pipelineDir, 0o755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(sc, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(pipelineDir, "scorecard.json"), data, 0o644)
 }
 
 // LoadScorecard reads a scorecard from a pipeline directory's scorecard.json.

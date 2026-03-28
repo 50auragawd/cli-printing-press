@@ -60,7 +60,7 @@ func GenerateFromDocs(docsURL, apiName string) (*spec.APISpec, error) {
 		Auth:        auth,
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   fmt.Sprintf("~/.config/%s-cli/config.toml", apiName),
+			Path:   fmt.Sprintf("~/.config/%s-pp-cli/config.toml", apiName),
 		},
 		Resources: resources,
 	}
@@ -375,7 +375,7 @@ auth:
     - "API_TOKEN"
 config:
   format: "toml"
-  path: "~/.config/%s-cli/config.toml"
+  path: "~/.config/%s-pp-cli/config.toml"
 resources:
   resource_name:
     description: "Operations on resource_name"

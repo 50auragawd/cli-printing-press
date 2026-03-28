@@ -58,3 +58,18 @@ func main() {
 	assert.Nil(t, report)
 	assert.FileExists(t, existingBinary)
 }
+
+func TestBuildCLI_UsesCanonicalCommandDirForClaimedOutput(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sample-pp-cli-2")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cmd", "sample-pp-cli"), 0o755))
+
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/sample-pp-cli\n\ngo 1.26.1\n")
+	writeTestFile(t, filepath.Join(dir, "cmd", "sample-pp-cli", "main.go"), `package main
+func main() {}
+`)
+
+	binaryPath, err := buildCLI(dir)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "sample-pp-cli-2"), binaryPath)
+	assert.FileExists(t, binaryPath)
+}

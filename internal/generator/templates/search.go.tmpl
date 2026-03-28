@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -25,25 +25,25 @@ func newSearchCmd(flags *rootFlags) *cobra.Command {
 Data must be synced first with the sync command. Searches are instant
 (millisecond-fast) since they query local SQLite, not the remote API.`,
 		Example: `  # Search all synced data
-  {{.Name}}-cli search "error timeout"
+  {{.Name}}-pp-cli search "error timeout"
 
   # Search a specific resource type
-  {{.Name}}-cli search "payment failed" --type transactions
+  {{.Name}}-pp-cli search "payment failed" --type transactions
 
   # JSON output for piping
-  {{.Name}}-cli search "critical" --json --limit 20`,
+  {{.Name}}-pp-cli search "critical" --json --limit 20`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := args[0]
 
 			if dbPath == "" {
 				home, _ := os.UserHomeDir()
-				dbPath = filepath.Join(home, ".local", "share", "{{.Name}}-cli", "data.db")
+				dbPath = filepath.Join(home, ".local", "share", "{{.Name}}-pp-cli", "data.db")
 			}
 
 			db, err := store.Open(dbPath)
 			if err != nil {
-				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-cli sync' first to populate the local database.", err)
+				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-pp-cli sync' first to populate the local database.", err)
 			}
 			defer db.Close()
 
@@ -82,7 +82,7 @@ Data must be synced first with the sync command. Searches are instant
 
 	cmd.Flags().StringVar(&resourceType, "type", "", "Filter by resource type")
 	cmd.Flags().IntVar(&limit, "limit", 50, "Maximum results to return")
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.local/share/{{.Name}}-cli/data.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.local/share/{{.Name}}-pp-cli/data.db)")
 
 	return cmd
 }

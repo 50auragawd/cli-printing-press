@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -27,19 +27,19 @@ func newHealthCmd(flags *rootFlags) *cobra.Command {
 
 A score of 100 means all items are fresh, assigned, and actively worked on.`,
 		Example: `  # Show workspace health score
-  {{.Name}}-cli health
+  {{.Name}}-pp-cli health
 
   # Output as JSON
-  {{.Name}}-cli health --json`,
+  {{.Name}}-pp-cli health --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
 				home, _ := os.UserHomeDir()
-				dbPath = filepath.Join(home, ".config", "{{.Name}}-cli", "store.db")
+				dbPath = filepath.Join(home, ".config", "{{.Name}}-pp-cli", "store.db")
 			}
 
 			db, err := store.Open(dbPath)
 			if err != nil {
-				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-cli sync' first.", err)
+				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-pp-cli sync' first.", err)
 			}
 			defer db.Close()
 
@@ -164,7 +164,7 @@ A score of 100 means all items are fresh, assigned, and actively worked on.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-cli/store.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-pp-cli/store.db)")
 
 	return cmd
 }

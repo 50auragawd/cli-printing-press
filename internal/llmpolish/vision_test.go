@@ -23,7 +23,7 @@ func TestSynthesizeVisionReturnsNilWhenLLMUnavailable(t *testing.T) {
 }
 
 func TestParseVisionCustomization(t *testing.T) {
-	raw := `{"resource_priority":["messages","members","channels"],"fts_fields":{"messages":["content"],"members":["username","bio"]},"workflow_names":{"archive":"archive","audit":"audit-log"},"example_overrides":{"sync":"discord-cli sync --guild 1234567890"},"desc_overrides":{"sync":"Sync guild messages to local SQLite for offline search"},"sync_hints":{"messages":{"direction":"newest_first","batch_size":100,"priority":1}}}`
+	raw := `{"resource_priority":["messages","members","channels"],"fts_fields":{"messages":["content"],"members":["username","bio"]},"workflow_names":{"archive":"archive","audit":"audit-log"},"example_overrides":{"sync":"discord-pp-cli sync --guild 1234567890"},"desc_overrides":{"sync":"Sync guild messages to local SQLite for offline search"},"sync_hints":{"messages":{"direction":"newest_first","batch_size":100,"priority":1}}}`
 
 	var vc VisionCustomization
 	err := json.Unmarshal([]byte(raw), &vc)

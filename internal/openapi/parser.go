@@ -199,7 +199,7 @@ func parse(data []byte, lenient bool) (*spec.APISpec, error) {
 		Auth:        mapAuth(doc, name),
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   fmt.Sprintf("~/.config/%s-cli/config.toml", name),
+			Path:   fmt.Sprintf("~/.config/%s-pp-cli/config.toml", name),
 		},
 		Resources: map[string]spec.Resource{},
 		Types:     map[string]spec.TypeDef{},

@@ -86,7 +86,7 @@ func parseSDLContent(source, raw string) (*spec.APISpec, error) {
 		Auth:        auth,
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   fmt.Sprintf("~/.config/%s-cli/config.toml", name),
+			Path:   fmt.Sprintf("~/.config/%s-pp-cli/config.toml", name),
 		},
 		Resources: map[string]spec.Resource{},
 		Types:     map[string]spec.TypeDef{},

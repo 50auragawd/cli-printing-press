@@ -32,7 +32,11 @@ The vision command produces the structure; Phase 0 fills it with intelligence.`,
 				return &ExitError{Code: ExitInputError, Err: fmt.Errorf("--api is required")}
 			}
 			if outputDir == "" {
-				outputDir = pipeline.DefaultOutputDir(apiName)
+				state, err := pipeline.LoadCurrentState(apiName)
+				if err != nil {
+					return &ExitError{Code: ExitInputError, Err: fmt.Errorf("no current run for %s; run `printing-press print %s` first or pass --output", apiName, apiName)}
+				}
+				outputDir = state.ResearchDir()
 			}
 
 			absOut, err := filepath.Abs(outputDir)
@@ -91,7 +95,7 @@ The vision command produces the structure; Phase 0 fills it with intelligence.`,
 	}
 
 	cmd.Flags().StringVar(&apiName, "api", "", "API name to research")
-	cmd.Flags().StringVar(&outputDir, "output", "", "Output directory (default: library/<api>-cli)")
+	cmd.Flags().StringVar(&outputDir, "output", "", "Output directory (default: current runstate research dir for the API)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
 
 	return cmd

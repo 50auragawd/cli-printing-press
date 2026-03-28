@@ -4,7 +4,7 @@ You give the printing press an API spec. It gives you back a Go CLI, an MCP serv
 
 The key idea: most API CLI generators stop at wrapping endpoints. The printing press goes further -- it profiles each API, detects its domain archetype (communication, project management, payments, etc.), and generates domain-specific "power user" commands like `sync`, `search`, `stale`, `health`, and `similar` on top of the standard CRUD wrappers.
 
-This is built as a Claude Code skill. You run `/printing-press Discord` inside Claude Code, and it orchestrates an 8-phase pipeline that researches the API, generates the code, scores quality, and iterates until it passes.
+This is built as a Claude Code skill. You run `/printing-press Discord` inside Claude Code, and it orchestrates a 9-phase pipeline that researches the API, generates the code, scores quality, and iterates until it passes.
 
 ---
 
@@ -40,7 +40,7 @@ cli-printing-press/
     printing-press/          # Main generation skill
     printing-press-catalog/  # Catalog browsing skill
   testdata/                  # Test fixtures
-  docs/plans/                # Phase plan templates
+  docs/plans/                # Project planning docs for this repo itself
 ```
 
 | Module | Responsibility |
@@ -51,14 +51,14 @@ cli-printing-press/
 | `internal/docspec/` | Scrapes API documentation URLs and generates `APISpec` (regex or LLM) |
 | `internal/generator/` | Renders Go templates against `APISpec` to produce a CLI project |
 | `internal/profiler/` | Analyzes an `APISpec` to detect domain archetype and recommend features |
-| `internal/pipeline/` | Orchestrates the 8-phase generation pipeline with state tracking |
+| `internal/pipeline/` | Orchestrates the 9-phase generation pipeline with state tracking |
 | `internal/vision/` | Defines the feature scoring model used by the profiler |
 | `internal/cli/` | Wires all Cobra commands: `generate`, `print`, `scorecard`, `dogfood`, `vision` |
 | `catalog/` | YAML entries for known APIs (Discord, Stripe, Linear, etc.) with spec URLs |
 
 Data flows through the system like this: a spec file (OpenAPI, GraphQL SDL, or internal YAML) gets parsed into an `APISpec` struct. The profiler analyzes that struct to detect domain signals and recommend features. The generator takes both the spec and the profile, selects the right templates, and renders a full Go project to disk.
 
-The pipeline module adds a higher-level orchestration layer on top. When you run `printing-press print Discord`, it creates an 8-phase plan directory with seed documents. Each phase is executed by Claude Code via `/ce:work`, and the pipeline tracks state in a `state.json` file so you can resume across sessions.
+The pipeline module adds a higher-level orchestration layer on top. When you run `printing-press print Discord`, it creates a 9-phase plan directory with seed documents under the checkout-scoped press home. Each phase is executed by Claude Code via `/ce:work`, and the pipeline tracks state in a `state.json` file so you can resume across sessions.
 
 This project has no external service dependencies. It's a pure Go binary that reads spec files and writes generated code.
 
@@ -76,7 +76,7 @@ This project has no external service dependencies. It's a pure Go binary that re
 | Quality gates | 7 mechanical checks every generated CLI must pass: `go mod tidy`, `go vet`, `go build`, binary build, `--help`, `version`, `doctor`. |
 | Two-tier scoring | Infrastructure scoring (50 pts: output modes, auth, errors, agent-native flags) + Domain correctness scoring (50 pts: path validity, auth protocol, data pipeline, dead code). |
 | Dogfood validator | Catches dead flags, dead functions, invalid API paths, and auth mismatches by cross-referencing generated code against the source spec. |
-| Pipeline phases | 8 sequential phases: preflight, research, scaffold, enrich, regenerate, review, comparative, ship. Each produces a plan document. |
+| Pipeline phases | 9 sequential phases: preflight, research, scaffold, enrich, regenerate, review, agent-readiness, comparative, ship. Each produces a plan document. |
 | Catalog entry | A YAML file in `catalog/` that maps an API name to its spec URL, format, category, and tier. Used by `DiscoverSpec()` to auto-resolve API names. |
 | Creativity ladder | Rung 1-2: API wrappers + output formatting (always generated). Rung 3: local persistence. Rung 4: domain analytics. Rung 5: behavioral insights. |
 
@@ -90,10 +90,11 @@ This is the flow users hit. The `/printing-press` Claude Code skill invokes `pri
 
 1. `internal/cli/root.go` (`newPrintCmd`) calls `pipeline.Init()` with the API name
 2. `pipeline.Init()` calls `DiscoverSpec()` which looks up the API in `catalog/` entries
-3. Seeds are written for each of the 8 phases into `docs/plans/<api>-pipeline/`
-4. `state.json` is created to track progress across sessions
-5. The user runs `/ce:work` on each phase plan sequentially
-6. `CompleteAndPlanNext()` dynamically generates the next phase's plan using outputs from completed phases
+3. A managed run is created under `~/.printing-press/.runstate/<scope>/runs/<run-id>/`
+4. Seeds are written into `~/.printing-press/.runstate/<scope>/runs/<run-id>/pipeline/`
+5. `state.json` is created in the runstate root to track progress across sessions
+6. The user runs `/ce:work` on each phase plan sequentially
+7. `CompleteAndPlanNext()` dynamically generates the next phase's plan using outputs from completed phases
 
 ### Flow 2: Direct Generation (`printing-press generate`)
 
@@ -120,8 +121,8 @@ internal/generator/generator.go (New + Generate)
   renders 30+ .tmpl files to output dir
   |
   v
-Generated CLI project at ./library/<name>-cli/
-  cmd/<name>-cli/main.go
+Generated CLI project published at ~/.printing-press/library/<name>-pp-cli/
+  cmd/<name>-pp-cli/main.go
   cmd/<name>-mcp/main.go
   internal/cli/   (per-resource commands)
   internal/client/ (HTTP client)
@@ -132,6 +133,11 @@ Quality gates (if --validate)
   go mod tidy -> go vet -> go build
   -> binary --help -> version -> doctor
 ```
+
+Skill-driven runs keep active work under `~/.printing-press/.runstate/<scope>/runs/<run-id>/` and archive manuscripts under `~/.printing-press/manuscripts/<api>/<run-id>/`:
+- `research/` for pre-build research artifacts
+- `proofs/` for scorecard, dogfood, and emboss evidence
+- `pipeline/` for phase seeds and `state.json`
 
 ### Flow 3: Docs-to-Spec (`--docs`)
 

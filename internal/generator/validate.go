@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mvanhorn/cli-printing-press/internal/artifacts"
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 )
 
 type validationGate struct {
@@ -19,7 +20,7 @@ type validationGate struct {
 }
 
 func (g *Generator) Validate() error {
-	binPath := filepath.Join(g.OutputDir, g.Spec.Name+"-cli-validation")
+	binPath := filepath.Join(g.OutputDir, naming.ValidationBinary(g.Spec.Name))
 	if err := artifacts.CleanupGeneratedCLI(g.OutputDir, artifacts.CleanupOptions{
 		RemoveValidationBinaries: true,
 		RemoveRecursiveCopies:    true,
@@ -60,24 +61,24 @@ func (g *Generator) Validate() error {
 		{
 			name: "build runnable binary",
 			run: func() error {
-				_, err := runCommand(g.OutputDir, 2*time.Minute, "go", "build", "-o", binPath, "./cmd/"+g.Spec.Name+"-cli")
+				_, err := runCommand(g.OutputDir, 2*time.Minute, "go", "build", "-o", binPath, "./cmd/"+naming.CLI(g.Spec.Name))
 				return err
 			},
 		},
 		{
-			name: g.Spec.Name + "-cli --help",
+			name: naming.CLI(g.Spec.Name) + " --help",
 			run: func() error {
 				return validateCommandOutput(g.OutputDir, 15*time.Second, binPath, "--help")
 			},
 		},
 		{
-			name: g.Spec.Name + "-cli version",
+			name: naming.CLI(g.Spec.Name) + " version",
 			run: func() error {
 				return validateCommandOutput(g.OutputDir, 15*time.Second, binPath, "version")
 			},
 		},
 		{
-			name: g.Spec.Name + "-cli doctor",
+			name: naming.CLI(g.Spec.Name) + " doctor",
 			run: func() error {
 				return validateCommandOutput(g.OutputDir, 15*time.Second, binPath, "doctor")
 			},

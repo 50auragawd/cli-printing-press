@@ -146,7 +146,7 @@ func TestBuildDocSpecLLMPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "GET /v1/charges")
 	assert.Contains(t, prompt, "base_url")
 	assert.Contains(t, prompt, "resources")
-	assert.Contains(t, prompt, "~/.config/stripe-cli/config.toml")
+	assert.Contains(t, prompt, "~/.config/stripe-pp-cli/config.toml")
 }
 
 func TestExtractYAML(t *testing.T) {

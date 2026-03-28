@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 	"github.com/mvanhorn/cli-printing-press/internal/openapi"
 	"github.com/mvanhorn/cli-printing-press/internal/spec"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +32,7 @@ func TestGenerateProjectsCompile(t *testing.T) {
 			apiSpec, err := spec.Parse(tt.specPath)
 			require.NoError(t, err)
 
-			outputDir := filepath.Join(t.TempDir(), apiSpec.Name+"-cli")
+			outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
 			gen := New(apiSpec, outputDir)
 			require.NoError(t, gen.Generate())
 
@@ -40,8 +41,8 @@ func TestGenerateProjectsCompile(t *testing.T) {
 			runGoCommand(t, outputDir, "mod", "tidy")
 			runGoCommand(t, outputDir, "build", "./...")
 
-			binaryPath := filepath.Join(outputDir, apiSpec.Name+"-cli")
-			runGoCommand(t, outputDir, "build", "-o", binaryPath, "./cmd/"+apiSpec.Name+"-cli")
+			binaryPath := filepath.Join(outputDir, naming.CLI(apiSpec.Name))
+			runGoCommand(t, outputDir, "build", "-o", binaryPath, "./cmd/"+naming.CLI(apiSpec.Name))
 
 			info, err := os.Stat(binaryPath)
 			require.NoError(t, err)
@@ -61,7 +62,7 @@ func TestGenerateOAuth2AuthTemplateConditionally(t *testing.T) {
 		apiSpec, err := openapi.Parse(data)
 		require.NoError(t, err)
 
-		outputDir := filepath.Join(t.TempDir(), apiSpec.Name+"-cli")
+		outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
 		gen := New(apiSpec, outputDir)
 		require.NoError(t, gen.Generate())
 
@@ -73,7 +74,7 @@ func TestGenerateOAuth2AuthTemplateConditionally(t *testing.T) {
 		apiSpec, err := spec.Parse(filepath.Join("..", "..", "testdata", "stytch.yaml"))
 		require.NoError(t, err)
 
-		outputDir := filepath.Join(t.TempDir(), apiSpec.Name+"-cli")
+		outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
 		gen := New(apiSpec, outputDir)
 		require.NoError(t, gen.Generate())
 
@@ -123,7 +124,7 @@ func TestGenerateWithNoAuth(t *testing.T) {
 		},
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   "~/.config/noauth-cli/config.toml",
+			Path:   "~/.config/noauth-pp-cli/config.toml",
 		},
 		Resources: map[string]spec.Resource{
 			"items": {
@@ -139,11 +140,11 @@ func TestGenerateWithNoAuth(t *testing.T) {
 		},
 	}
 
-	outputDir := filepath.Join(t.TempDir(), "noauth-cli")
+	outputDir := filepath.Join(t.TempDir(), "noauth-pp-cli")
 	gen := New(apiSpec, outputDir)
 	require.NoError(t, gen.Generate())
 	require.NoError(t, gen.Validate())
-	assert.NoFileExists(t, filepath.Join(outputDir, "noauth-cli-validation"))
+	assert.NoFileExists(t, filepath.Join(outputDir, naming.ValidationBinary("noauth")))
 }
 
 func TestGenerateWithOwnerField(t *testing.T) {
@@ -162,7 +163,7 @@ func TestGenerateWithOwnerField(t *testing.T) {
 		},
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   "~/.config/owned-cli/config.toml",
+			Path:   "~/.config/owned-pp-cli/config.toml",
 		},
 		Resources: map[string]spec.Resource{
 			"things": {
@@ -178,7 +179,7 @@ func TestGenerateWithOwnerField(t *testing.T) {
 		},
 	}
 
-	outputDir := filepath.Join(t.TempDir(), "owned-cli")
+	outputDir := filepath.Join(t.TempDir(), "owned-pp-cli")
 	gen := New(apiSpec, outputDir)
 	require.NoError(t, gen.Generate())
 
@@ -203,7 +204,7 @@ func TestGenerateWithEmptyOwner(t *testing.T) {
 		},
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   "~/.config/unowned-cli/config.toml",
+			Path:   "~/.config/unowned-pp-cli/config.toml",
 		},
 		Resources: map[string]spec.Resource{
 			"widgets": {
@@ -219,7 +220,7 @@ func TestGenerateWithEmptyOwner(t *testing.T) {
 		},
 	}
 
-	outputDir := filepath.Join(t.TempDir(), "unowned-cli")
+	outputDir := filepath.Join(t.TempDir(), "unowned-pp-cli")
 	gen := New(apiSpec, outputDir)
 	require.NoError(t, gen.Generate())
 
@@ -239,7 +240,7 @@ func generatePetstore(t *testing.T) string {
 	apiSpec, err := openapi.Parse(data)
 	require.NoError(t, err)
 
-	outputDir := filepath.Join(t.TempDir(), apiSpec.Name+"-cli")
+	outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
 	gen := New(apiSpec, outputDir)
 	require.NoError(t, gen.Generate())
 

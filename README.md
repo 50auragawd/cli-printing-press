@@ -207,10 +207,10 @@ Inspired by Peter Steinberger's [gogcli](https://github.com/steipete/gogcli). Tw
 
 ```bash
 # Run the honest scorecard
-printing-press scorecard --dir ./discord-cli --spec /tmp/discord-spec.json
+printing-press scorecard --dir ./discord-pp-cli --spec /tmp/discord-spec.json
 
 # Run the mechanical dogfood validator
-printing-press dogfood --dir ./discord-cli --spec /tmp/discord-spec.json
+printing-press dogfood --dir ./discord-pp-cli --spec /tmp/discord-spec.json
 ```
 
 ## Quick Start
@@ -224,7 +224,7 @@ printing-press dogfood --dir ./discord-cli --spec /tmp/discord-spec.json
 Then build the binary (needed for scorecard, verify, and dogfood commands):
 
 ```bash
-cd ~/cli-printing-press
+cd "$(git rev-parse --show-toplevel)"
 go build -o ./printing-press ./cmd/printing-press
 ```
 
@@ -238,16 +238,25 @@ go build -o ./printing-press ./cmd/printing-press
 
 Each run produces two binaries (`<api>-pp-cli` + `<api>-pp-mcp`), 8 analysis documents, and a Quality Score.
 
+By default, active and published output are separated:
+
+- Active managed runs work in `~/.printing-press/.runstate/<scope>/runs/<run-id>/working/<api>-pp-cli`
+- Published CLIs go to `~/.printing-press/library/<api>-pp-cli`
+- Archived manuscripts go to `~/.printing-press/manuscripts/<api>/<run-id>/`
+- Manuscripts are split into `research/`, `proofs/`, and `pipeline/`
+
+`<scope>` is derived from the current git checkout path, so parallel worktrees do not stomp on each other. If you pass `--output`, that overrides the generated CLI location for that command.
+
 ## Verification Tools
 
 Four layers of mechanical validation - no vibes, no self-assessment.
 
 ```bash
 # Quality Scorecard: two-tier scoring (infrastructure + domain correctness)
-printing-press scorecard --dir ./my-cli --spec ./openapi.json
+printing-press scorecard --dir ./my-pp-cli --spec ./openapi.json
 
 # Dogfood: catches dead flags, dead functions, auth mismatches, invalid paths
-printing-press dogfood --dir ./my-cli --spec ./openapi.json
+printing-press dogfood --dir ./my-pp-cli --spec ./openapi.json
 ```
 
 ### Proof of Behavior (Phase 4.7)

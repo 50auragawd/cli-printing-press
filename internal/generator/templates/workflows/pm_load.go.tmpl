@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -23,19 +23,19 @@ func newLoadCmd(flags *rootFlags) *cobra.Command {
 		Long: `Analyze locally synced data to show how many items are assigned to each
 person. Helps identify overloaded team members and unbalanced workload.`,
 		Example: `  # Show workload distribution
-  {{.Name}}-cli load
+  {{.Name}}-pp-cli load
 
   # Output as JSON
-  {{.Name}}-cli load --json`,
+  {{.Name}}-pp-cli load --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
 				home, _ := os.UserHomeDir()
-				dbPath = filepath.Join(home, ".config", "{{.Name}}-cli", "store.db")
+				dbPath = filepath.Join(home, ".config", "{{.Name}}-pp-cli", "store.db")
 			}
 
 			db, err := store.Open(dbPath)
 			if err != nil {
-				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-cli sync' first.", err)
+				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-pp-cli sync' first.", err)
 			}
 			defer db.Close()
 
@@ -112,7 +112,7 @@ person. Helps identify overloaded team members and unbalanced workload.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-cli/store.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-pp-cli/store.db)")
 
 	return cmd
 }

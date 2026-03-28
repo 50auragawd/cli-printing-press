@@ -18,10 +18,10 @@ func newScorecardCmd() *cobra.Command {
 		Use:   "scorecard",
 		Short: "Score a generated CLI against the Steinberger bar",
 		Example: `  # Score a generated CLI directory
-  printing-press scorecard --dir ./generated/stripe-cli
+  printing-press scorecard --dir ./generated/stripe-pp-cli
 
   # Output as JSON
-  printing-press scorecard --dir ./generated/stripe-cli --json`,
+  printing-press scorecard --dir ./generated/stripe-pp-cli --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dir == "" {
 				return &ExitError{Code: ExitInputError, Err: fmt.Errorf("--dir is required")}

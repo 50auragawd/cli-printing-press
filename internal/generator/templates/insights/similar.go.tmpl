@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -24,25 +24,25 @@ func newSimilarCmd(flags *rootFlags) *cobra.Command {
 search index to find other items with similar content. Helps identify duplicate
 work items, tickets, or tasks.`,
 		Example: `  # Find items similar to a given item
-  {{.Name}}-cli similar abc123
+  {{.Name}}-pp-cli similar abc123
 
   # Limit results
-  {{.Name}}-cli similar abc123 --limit 5
+  {{.Name}}-pp-cli similar abc123 --limit 5
 
   # Output as JSON
-  {{.Name}}-cli similar abc123 --json`,
+  {{.Name}}-pp-cli similar abc123 --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			itemID := args[0]
 
 			if dbPath == "" {
 				home, _ := os.UserHomeDir()
-				dbPath = filepath.Join(home, ".config", "{{.Name}}-cli", "store.db")
+				dbPath = filepath.Join(home, ".config", "{{.Name}}-pp-cli", "store.db")
 			}
 
 			db, err := store.Open(dbPath)
 			if err != nil {
-				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-cli sync' first.", err)
+				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-pp-cli sync' first.", err)
 			}
 			defer db.Close()
 
@@ -162,7 +162,7 @@ work items, tickets, or tasks.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-cli/store.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-pp-cli/store.db)")
 	cmd.Flags().IntVar(&limit, "limit", 10, "Maximum number of similar items to show")
 
 	return cmd

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mvanhorn/cli-printing-press/internal/generator"
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -181,15 +182,15 @@ func TestGenerateFromOpenAPICompiles(t *testing.T) {
 			parsed, err := Parse(data)
 			require.NoError(t, err)
 
-			outputDir := filepath.Join(t.TempDir(), parsed.Name+"-cli")
+			outputDir := filepath.Join(t.TempDir(), naming.CLI(parsed.Name))
 			gen := generator.New(parsed, outputDir)
 			require.NoError(t, gen.Generate())
 
 			runGo(t, outputDir, "mod", "tidy")
 			runGo(t, outputDir, "build", "./...")
 
-			binaryPath := filepath.Join(outputDir, parsed.Name+"-cli")
-			runGo(t, outputDir, "build", "-o", binaryPath, "./cmd/"+parsed.Name+"-cli")
+			binaryPath := filepath.Join(outputDir, naming.CLI(parsed.Name))
+			runGo(t, outputDir, "build", "-o", binaryPath, "./cmd/"+naming.CLI(parsed.Name))
 
 			info, err := os.Stat(binaryPath)
 			require.NoError(t, err)

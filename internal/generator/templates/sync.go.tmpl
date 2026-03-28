@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -41,19 +41,19 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 incremental sync (only fetches new data since last sync) and full resync.
 Once synced, use the 'search' command for instant full-text search.`,
 		Example: `  # Sync all resources
-  {{.Name}}-cli sync
+  {{.Name}}-pp-cli sync
 
   # Sync specific resources only
-  {{.Name}}-cli sync --resources channels,messages
+  {{.Name}}-pp-cli sync --resources channels,messages
 
   # Full resync (ignore previous checkpoint)
-  {{.Name}}-cli sync --full
+  {{.Name}}-pp-cli sync --full
 
   # Incremental sync: only records from the last 7 days
-  {{.Name}}-cli sync --since 7d
+  {{.Name}}-pp-cli sync --since 7d
 
   # Parallel sync with 8 workers
-  {{.Name}}-cli sync --concurrency 8`,
+  {{.Name}}-pp-cli sync --concurrency 8`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := flags.newClient()
 			if err != nil {
@@ -63,7 +63,7 @@ Once synced, use the 'search' command for instant full-text search.`,
 
 			if dbPath == "" {
 				home, _ := os.UserHomeDir()
-				dbPath = filepath.Join(home, ".local", "share", "{{.Name}}-cli", "data.db")
+				dbPath = filepath.Join(home, ".local", "share", "{{.Name}}-pp-cli", "data.db")
 			}
 
 			db, err := store.Open(dbPath)
@@ -154,7 +154,7 @@ Once synced, use the 'search' command for instant full-text search.`,
 	cmd.Flags().BoolVar(&full, "full", false, "Full resync (ignore previous checkpoint)")
 	cmd.Flags().StringVar(&since, "since", "", "Incremental sync duration (e.g. 7d, 24h, 1w, 30m)")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 4, "Number of parallel sync workers")
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.local/share/{{.Name}}-cli/data.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.local/share/{{.Name}}-pp-cli/data.db)")
 
 	return cmd
 }

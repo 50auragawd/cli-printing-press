@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 	"github.com/mvanhorn/cli-printing-press/internal/pipeline"
 	"github.com/spf13/cobra"
 )
@@ -66,17 +67,22 @@ Step 6: REPORT - Output the delta
 Use --audit-only to just get the baseline without making changes.
 The improvement steps (2-4) are driven by the /printing-press emboss skill.`,
 		Example: `  # Full emboss cycle (audit -> improve -> re-verify)
-  # Run the skill: /printing-press emboss ./discord-cli
+  # Run the skill: /printing-press emboss ./discord-pp-cli
   # Or just get the baseline:
-  printing-press emboss --dir ./discord-cli --spec /tmp/spec.json --audit-only
+  printing-press emboss --dir ./discord-pp-cli --spec /tmp/spec.json --audit-only
 
   # Audit with live API testing
-  printing-press emboss --dir ./discord-cli --spec /tmp/spec.json --api-key $TOKEN --audit-only`,
+  printing-press emboss --dir ./discord-pp-cli --spec /tmp/spec.json --api-key $TOKEN --audit-only`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			baselinePath := filepath.Join(dir, ".emboss-baseline.json")
-			name := filepath.Base(dir)
+			workingDir, baselinePath, _, err := resolveEmbossWorkspace(dir)
+			if err != nil {
+				return err
+			}
+			if workingDir != dir {
+				fmt.Fprintf(os.Stderr, "Emboss working dir: %s\n", workingDir)
+			}
 			report := &EmbossReport{
-				Dir:       dir,
+				Dir:       workingDir,
 				Spec:      specPath,
 				Timestamp: time.Now().Format(time.RFC3339),
 			}
@@ -94,11 +100,11 @@ The improvement steps (2-4) are driven by the /printing-press emboss skill.`,
 				} else {
 					report.Before = baselineReport.Before
 					fmt.Fprintln(os.Stderr, "Existing baseline found. Running fresh audit for delta...")
-					after := runEmbossAudit(dir, specPath, apiKey, envVar, "after")
+					after := runEmbossAudit(workingDir, specPath, apiKey, envVar, "after")
 					report.After = &after
 					report.Delta = computeDelta(report.Before, after)
 					report.Mode = "delta"
-					reportPath, writeErr := writeEmbossDeltaReport(name, report.Before, after, report.Delta)
+					reportPath, writeErr := writeEmbossDeltaReport(workingDir, report.Before, after, report.Delta)
 					if writeErr != nil {
 						fmt.Fprintf(os.Stderr, "warning: failed to write delta report: %v\n", writeErr)
 					} else {
@@ -114,7 +120,7 @@ The improvement steps (2-4) are driven by the /printing-press emboss skill.`,
 			}
 
 			// Step 1: AUDIT - baseline
-			report.Before = runEmbossAudit(dir, specPath, apiKey, envVar, "baseline")
+			report.Before = runEmbossAudit(workingDir, specPath, apiKey, envVar, "baseline")
 
 			if auditOnly {
 				if saveBaseline {
@@ -136,9 +142,9 @@ The improvement steps (2-4) are driven by the /printing-press emboss skill.`,
 			}
 
 			fmt.Fprintln(os.Stderr, "\nBaseline saved. Now run the skill for improvements:")
-			fmt.Fprintf(os.Stderr, "  /printing-press emboss %s\n\n", dir)
+			fmt.Fprintf(os.Stderr, "  /printing-press emboss %s\n\n", workingDir)
 			fmt.Fprintln(os.Stderr, "When done, re-run this command to compute the delta:")
-			fmt.Fprintf(os.Stderr, "  printing-press emboss --dir %s --spec %s\n", dir, specPath)
+			fmt.Fprintf(os.Stderr, "  printing-press emboss --dir %s --spec %s\n", workingDir, specPath)
 			return nil
 		},
 	}
@@ -153,6 +159,54 @@ The improvement steps (2-4) are driven by the /printing-press emboss skill.`,
 	cmd.Flags().BoolVar(&keepBaseline, "keep-baseline", false, "Keep the saved baseline after computing a delta")
 	_ = cmd.MarkFlagRequired("dir")
 	return cmd
+}
+
+func resolveEmbossWorkspace(dir string) (string, string, *pipeline.PipelineState, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("resolving dir: %w", err)
+	}
+
+	if state, err := pipeline.FindStateByWorkingDir(absDir); err == nil {
+		if err := os.MkdirAll(state.ProofsDir(), 0o755); err != nil {
+			return "", "", nil, err
+		}
+		return absDir, filepath.Join(state.ProofsDir(), ".emboss-baseline.json"), state, nil
+	}
+
+	libraryRoot, err := filepath.Abs(pipeline.PublishedLibraryRoot())
+	if err != nil {
+		return "", "", nil, fmt.Errorf("resolving library root: %w", err)
+	}
+
+	if absDir == libraryRoot || strings.HasPrefix(absDir, libraryRoot+string(os.PathSeparator)) {
+		apiName := naming.TrimCLISuffix(filepath.Base(absDir))
+
+		state, err := pipeline.NewManagedState(apiName)
+		if err != nil {
+			return "", "", nil, err
+		}
+		state.PublishedDir = absDir
+		state.ExcludeFromCurrentResolution = true
+		if err := os.MkdirAll(filepath.Dir(state.EffectiveWorkingDir()), 0o755); err != nil {
+			return "", "", nil, err
+		}
+		if err := pipeline.CopyDir(absDir, state.EffectiveWorkingDir()); err != nil {
+			return "", "", nil, fmt.Errorf("copying published CLI into runstate: %w", err)
+		}
+		if err := state.SaveWithoutCurrentPointer(); err != nil {
+			return "", "", nil, err
+		}
+		if err := pipeline.WriteRunManifest(state); err != nil {
+			return "", "", nil, err
+		}
+		if err := os.MkdirAll(state.ProofsDir(), 0o755); err != nil {
+			return "", "", nil, err
+		}
+		return state.EffectiveWorkingDir(), filepath.Join(state.ProofsDir(), ".emboss-baseline.json"), state, nil
+	}
+
+	return absDir, filepath.Join(absDir, ".emboss-baseline.json"), nil, nil
 }
 
 func runEmbossAudit(dir, specPath, apiKey, envVar, label string) EmbossSnapshot {
@@ -207,9 +261,13 @@ func computeDelta(before, after EmbossSnapshot) *EmbossDelta {
 	}
 }
 
-func writeEmbossDeltaReport(name string, before, after EmbossSnapshot, delta *EmbossDelta) (string, error) {
-	reportDir := filepath.Join("docs", "plans")
-	if err := os.MkdirAll(reportDir, 0755); err != nil {
+func writeEmbossDeltaReport(dir string, before, after EmbossSnapshot, delta *EmbossDelta) (string, error) {
+	name := filepath.Base(dir)
+	reportDir := dir
+	if state, err := pipeline.FindStateByWorkingDir(dir); err == nil {
+		reportDir = state.ProofsDir()
+	}
+	if err := os.MkdirAll(reportDir, 0o755); err != nil {
 		return "", err
 	}
 

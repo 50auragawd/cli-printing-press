@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/{{.Owner}}/{{.Name}}-cli/internal/store"
+	"github.com/{{.Owner}}/{{.Name}}-pp-cli/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -23,19 +23,19 @@ func newOrphansCmd(flags *rootFlags) *cobra.Command {
 		Long: `Scan locally synced data for items that are missing important fields
 such as assignee, project, priority, or labels. Useful for triaging unowned work.`,
 		Example: `  # Find orphaned items
-  {{.Name}}-cli orphans
+  {{.Name}}-pp-cli orphans
 
   # Output as JSON
-  {{.Name}}-cli orphans --json`,
+  {{.Name}}-pp-cli orphans --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
 				home, _ := os.UserHomeDir()
-				dbPath = filepath.Join(home, ".config", "{{.Name}}-cli", "store.db")
+				dbPath = filepath.Join(home, ".config", "{{.Name}}-pp-cli", "store.db")
 			}
 
 			db, err := store.Open(dbPath)
 			if err != nil {
-				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-cli sync' first.", err)
+				return fmt.Errorf("opening local database: %w\nRun '{{.Name}}-pp-cli sync' first.", err)
 			}
 			defer db.Close()
 
@@ -139,7 +139,7 @@ such as assignee, project, priority, or labels. Useful for triaging unowned work
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-cli/store.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.config/{{.Name}}-pp-cli/store.db)")
 
 	return cmd
 }

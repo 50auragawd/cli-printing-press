@@ -1,9 +1,13 @@
 package pipeline
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestScoreAlternative(t *testing.T) {
@@ -54,4 +58,24 @@ func TestRunComparative(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, 95, result.OurScore)
 	assert.Equal(t, "ship", result.Recommendation)
+}
+
+func TestRunComparativeLoadsResearchFromSiblingResearchDir(t *testing.T) {
+	runRoot := t.TempDir()
+	pipelineDir := filepath.Join(runRoot, "pipeline")
+	researchDir := filepath.Join(runRoot, "research")
+
+	require.NoError(t, os.MkdirAll(researchDir, 0o755))
+	research := &ResearchResult{
+		Alternatives: []Alternative{
+			{Name: "competitor/sample-cli", InstallMethod: "binary", CommandCount: 12},
+		},
+	}
+	data, err := json.MarshalIndent(research, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(researchDir, "research.json"), data, 0o644))
+
+	result, err := RunComparative(pipelineDir, 10)
+	require.NoError(t, err)
+	assert.Len(t, result.Alternatives, 1)
 }

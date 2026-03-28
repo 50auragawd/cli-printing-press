@@ -17,6 +17,7 @@ import (
 	"github.com/mvanhorn/cli-printing-press/internal/graphql"
 	"github.com/mvanhorn/cli-printing-press/internal/llm"
 	"github.com/mvanhorn/cli-printing-press/internal/llmpolish"
+	"github.com/mvanhorn/cli-printing-press/internal/naming"
 	"github.com/mvanhorn/cli-printing-press/internal/openapi"
 	"github.com/mvanhorn/cli-printing-press/internal/pipeline"
 	"github.com/mvanhorn/cli-printing-press/internal/spec"
@@ -152,7 +153,7 @@ func newGenerateCmd() *cobra.Command {
 					}
 				}
 
-				fmt.Fprintf(os.Stderr, "Generated %s-cli at %s (from docs)\n", parsed.Name, absOut)
+				fmt.Fprintf(os.Stderr, "Generated %s at %s (from docs)\n", naming.CLI(parsed.Name), absOut)
 				if asJSON {
 					json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 						"name":       parsed.Name,
@@ -250,7 +251,7 @@ func newGenerateCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Fprintf(os.Stderr, "Generated %s-cli at %s\n", apiSpec.Name, absOut)
+			fmt.Fprintf(os.Stderr, "Generated %s at %s\n", naming.CLI(apiSpec.Name), absOut)
 			if asJSON {
 				json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 					"name":       apiSpec.Name,
@@ -266,10 +267,10 @@ func newGenerateCmd() *cobra.Command {
 
 	cmd.Flags().StringSliceVar(&specFiles, "spec", nil, "Path or URL to API spec (can be repeated)")
 	cmd.Flags().StringVar(&cliName, "name", "", "CLI name (required when using multiple specs)")
-	cmd.Flags().StringVar(&outputDir, "output", "", "Output directory (default: library/<name>-cli)")
+	cmd.Flags().StringVar(&outputDir, "output", "", "Output directory (default: ~/.printing-press/library/<name>-pp-cli)")
 	cmd.Flags().BoolVar(&validate, "validate", true, "Run quality gates on the generated project")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "Refresh cached remote spec before generating")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite the base output directory (e.g. library/notion-pp-cli) instead of auto-incrementing")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite the base output directory (e.g. ~/.printing-press/library/notion-pp-cli) instead of auto-incrementing")
 	cmd.Flags().BoolVar(&lenient, "lenient", false, "Skip validation errors from broken $refs in OpenAPI specs")
 	cmd.Flags().StringVar(&docsURL, "docs", "", "API documentation URL to generate spec from")
 	cmd.Flags().BoolVar(&polish, "polish", false, "Run LLM polish pass on generated CLI (requires claude or codex CLI)")
@@ -301,7 +302,7 @@ func mergeSpecs(specs []*spec.APISpec, name string) *spec.APISpec {
 		Auth:        specs[0].Auth,
 		Config: spec.ConfigSpec{
 			Format: "toml",
-			Path:   fmt.Sprintf("~/.config/%s-cli/config.toml", name),
+			Path:   fmt.Sprintf("~/.config/%s-pp-cli/config.toml", name),
 		},
 		Resources: map[string]spec.Resource{},
 		Types:     map[string]spec.TypeDef{},
@@ -472,7 +473,7 @@ func newPrintCmd() *cobra.Command {
 
 			fmt.Fprintf(os.Stderr, "Pipeline created for %s\n", apiName)
 			fmt.Fprintf(os.Stderr, "  Spec: %s\n", state.SpecURL)
-			fmt.Fprintf(os.Stderr, "  Output: %s\n", state.OutputDir)
+			fmt.Fprintf(os.Stderr, "  Output: %s\n", state.EffectiveWorkingDir())
 			fmt.Fprintf(os.Stderr, "  Plans:\n")
 			for i, phase := range pipeline.PhaseOrder {
 				fmt.Fprintf(os.Stderr, "    %d. %s\n", i, state.PlanPath(phase))
@@ -482,16 +483,18 @@ func newPrintCmd() *cobra.Command {
 			if asJSON {
 				json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 					"api_name":         apiName,
-					"pipeline_dir":     state.OutputDir,
+					"pipeline_dir":     state.PipelineDir(),
 					"phases_completed": countCompletedPhases(state),
-					"state_file":       pipeline.StatePath(apiName),
+					"state_file":       state.StatePath(),
+					"working_dir":      state.EffectiveWorkingDir(),
+					"run_id":           state.RunID,
 				})
 			}
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&outputDir, "output", "", "Output directory (default: library/<api-name>-cli)")
+	cmd.Flags().StringVar(&outputDir, "output", "", "Working directory (default: ~/.printing-press/.runstate/<scope>/runs/<run-id>/working/<api-name>-pp-cli)")
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing pipeline")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Resume from existing checkpoint")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
