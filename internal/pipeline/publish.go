@@ -162,7 +162,7 @@ func CopyDir(src, dst string) error {
 		return err
 	}
 
-	return filepath.Walk(src, func(path string, info os.FileInfo, walkErr error) error {
+	return filepath.Walk(src, func(path string, _ os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -176,7 +176,7 @@ func CopyDir(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 
-		info, err = os.Lstat(path)
+		info, err := os.Lstat(path)
 		if err != nil {
 			return err
 		}
@@ -206,13 +206,13 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err

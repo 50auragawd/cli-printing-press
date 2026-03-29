@@ -150,55 +150,6 @@ func removeDeadFlags(dir string, deadFlags []string) error {
 	return os.WriteFile(rootPath, []byte(content), 0o644)
 }
 
-func removeDeadFunctions(dir string, deadFuncs []string) error {
-	helpersPath := filepath.Join(dir, "internal", "cli", "helpers.go")
-	data, err := os.ReadFile(helpersPath)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("reading helpers.go: %w", err)
-	}
-
-	lines := strings.Split(string(data), "\n")
-
-	for _, funcName := range deadFuncs {
-		funcSig := "func " + funcName + "("
-		startIdx := -1
-		for i, line := range lines {
-			if strings.Contains(line, funcSig) {
-				startIdx = i
-				for startIdx > 0 && strings.HasPrefix(strings.TrimSpace(lines[startIdx-1]), "//") {
-					startIdx--
-				}
-				break
-			}
-		}
-		if startIdx == -1 {
-			continue
-		}
-
-		braceCount := 0
-		endIdx := -1
-		for i := startIdx; i < len(lines); i++ {
-			braceCount += strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
-			if braceCount > 0 || strings.Contains(lines[i], "{") {
-				if braceCount == 0 && i > startIdx {
-					endIdx = i
-					break
-				}
-			}
-		}
-		if endIdx == -1 {
-			continue
-		}
-
-		lines = append(lines[:startIdx], lines[endIdx+1:]...)
-	}
-
-	return os.WriteFile(helpersPath, []byte(strings.Join(lines, "\n")), 0o644)
-}
-
 func removeGhostTables(dir string, ghostTables []string) error {
 	storePath := filepath.Join(dir, "internal", "store", "store.go")
 	data, err := os.ReadFile(storePath)

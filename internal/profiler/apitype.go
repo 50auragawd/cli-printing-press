@@ -61,7 +61,7 @@ func readHead(path string, n int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	buf := make([]byte, n)
 	nr, err := f.Read(buf)

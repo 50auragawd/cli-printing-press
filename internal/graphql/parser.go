@@ -10,6 +10,8 @@ import (
 	"unicode"
 
 	"github.com/mvanhorn/cli-printing-press/internal/spec"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var (
@@ -395,7 +397,7 @@ func mutationDescription(action, entityName string) string {
 	case "delete":
 		return "Delete a " + strings.ToLower(entityName)
 	default:
-		return strings.Title(action) + " " + strings.ToLower(entityName)
+		return cases.Title(language.English).String(action) + " " + strings.ToLower(entityName)
 	}
 }
 

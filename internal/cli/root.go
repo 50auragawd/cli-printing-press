@@ -155,13 +155,15 @@ func newGenerateCmd() *cobra.Command {
 
 				fmt.Fprintf(os.Stderr, "Generated %s at %s (from docs)\n", naming.CLI(parsed.Name), absOut)
 				if asJSON {
-					json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+					if err := json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 						"name":       parsed.Name,
 						"output_dir": absOut,
 						"spec_files": specFiles,
 						"validated":  validate,
 						"polished":   polished,
-					})
+					}); err != nil {
+						return fmt.Errorf("encoding JSON: %w", err)
+					}
 				}
 				return nil
 			}
@@ -268,13 +270,15 @@ func newGenerateCmd() *cobra.Command {
 
 			fmt.Fprintf(os.Stderr, "Generated %s at %s\n", naming.CLI(apiSpec.Name), absOut)
 			if asJSON {
-				json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+				if err := json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 					"name":       apiSpec.Name,
 					"output_dir": absOut,
 					"spec_files": specFiles,
 					"validated":  validate,
 					"polished":   polished,
-				})
+				}); err != nil {
+					return fmt.Errorf("encoding JSON: %w", err)
+				}
 			}
 			return nil
 		},
@@ -413,7 +417,7 @@ func fetchOrCacheSpec(specURL string, refresh bool, skipCache bool) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("unexpected response status: %s", resp.Status)
@@ -496,14 +500,16 @@ func newPrintCmd() *cobra.Command {
 			fmt.Fprintf(os.Stderr, "\nStart with: /ce:work %s\n", state.PlanPath(pipeline.PhasePreflight))
 
 			if asJSON {
-				json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+				if err := json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 					"api_name":         apiName,
 					"pipeline_dir":     state.PipelineDir(),
 					"phases_completed": countCompletedPhases(state),
 					"state_file":       state.StatePath(),
 					"working_dir":      state.EffectiveWorkingDir(),
 					"run_id":           state.RunID,
-				})
+				}); err != nil {
+					return fmt.Errorf("encoding JSON: %w", err)
+				}
 			}
 			return nil
 		},

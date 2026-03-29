@@ -15,6 +15,8 @@ import (
 	"github.com/mvanhorn/cli-printing-press/internal/naming"
 	"github.com/mvanhorn/cli-printing-press/internal/profiler"
 	"github.com/mvanhorn/cli-printing-press/internal/spec"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 //go:embed templates
@@ -54,7 +56,7 @@ func New(s *spec.APISpec, outputDir string) *Generator {
 		templates: make(map[string]*template.Template),
 	}
 	g.funcs = template.FuncMap{
-		"title":              strings.Title,
+		"title":              cases.Title(language.English).String,
 		"lower":              strings.ToLower,
 		"upper":              strings.ToUpper,
 		"join":               strings.Join,
@@ -428,7 +430,7 @@ func (g *Generator) renderTemplate(tmplName, outPath string, data any) error {
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", fullPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := tmpl.Execute(f, data); err != nil {
 		return fmt.Errorf("executing template %s: %w", tmplName, err)

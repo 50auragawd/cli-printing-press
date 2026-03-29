@@ -126,17 +126,17 @@ func GenerateFixPlans(scorecard *Scorecard, pipelineDir string) ([]string, error
 func buildFixPlan(apiName, dimension string, currentScore int) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("# Fix Plan: %s\n\n", dimension))
-	b.WriteString(fmt.Sprintf("**API:** %s\n", apiName))
-	b.WriteString(fmt.Sprintf("**Current Score:** %d/10\n", currentScore))
-	b.WriteString(fmt.Sprintf("**Target Score:** 8/10\n\n"))
+	fmt.Fprintf(&b, "# Fix Plan: %s\n\n", dimension)
+	fmt.Fprintf(&b, "**API:** %s\n", apiName)
+	fmt.Fprintf(&b, "**Current Score:** %d/10\n", currentScore)
+	b.WriteString("**Target Score:** 8/10\n\n")
 
 	// Templates involved
 	templates := templateMapping[dimension]
 	if len(templates) > 0 {
 		b.WriteString("## Templates to Modify\n\n")
 		for _, t := range templates {
-			b.WriteString(fmt.Sprintf("- `templates/%s`\n", t))
+			fmt.Fprintf(&b, "- `templates/%s`\n", t)
 		}
 	} else {
 		b.WriteString("## Templates to Create\n\n")
@@ -157,9 +157,9 @@ func buildFixPlan(apiName, dimension string, currentScore int) string {
 	b.WriteString("## Verification\n\n")
 	b.WriteString("After applying changes, re-run the scorecard:\n\n")
 	b.WriteString("```bash\n")
-	b.WriteString(fmt.Sprintf("printing-press scorecard --api %s\n", apiName))
+	fmt.Fprintf(&b, "printing-press scorecard --api %s\n", apiName)
 	b.WriteString("```\n\n")
-	b.WriteString(fmt.Sprintf("The %s dimension should score at least 8/10.\n", dimension))
+	fmt.Fprintf(&b, "The %s dimension should score at least 8/10.\n", dimension)
 
 	return b.String()
 }

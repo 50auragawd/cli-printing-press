@@ -13,6 +13,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mvanhorn/cli-printing-press/internal/spec"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const (
@@ -423,13 +425,11 @@ func mapResources(doc *openapi3.T, out *spec.APISpec, basePath string) {
 		var targetEndpoints map[string]spec.Endpoint
 		targetResourceName := primaryName
 		if subName != "" {
-			sub, ok := resource.SubResources[subName]
-			if !ok {
-				sub = spec.Resource{
+			if _, ok := resource.SubResources[subName]; !ok {
+				resource.SubResources[subName] = spec.Resource{
 					Description: tagDescriptions[subName],
 					Endpoints:   map[string]spec.Endpoint{},
 				}
-				resource.SubResources[subName] = sub
 			}
 			targetEndpoints = resource.SubResources[subName].Endpoints
 			targetResourceName = subName
@@ -719,20 +719,6 @@ func mapTagDescriptions(tags openapi3.Tags) map[string]string {
 		}
 	}
 	return out
-}
-
-func resourceDescription(op *openapi3.Operation, tagDescriptions map[string]string) string {
-	if op == nil {
-		return ""
-	}
-	for _, tag := range op.Tags {
-		for _, key := range tagDescriptionKeys(tag) {
-			if desc := tagDescriptions[key]; desc != "" {
-				return desc
-			}
-		}
-	}
-	return ""
 }
 
 func tagDescriptionKeys(name string) []string {
@@ -1358,11 +1344,6 @@ func firstJSONMediaType(content openapi3.Content) *openapi3.MediaType {
 	return nil
 }
 
-func resourceNameFromPath(path, basePath string) string {
-	primary, _ := resourceAndSubFromPath(path, basePath, nil)
-	return primary
-}
-
 func resourceAndSubFromPath(path, basePath string, commonPrefix []string) (string, string) {
 	segments := pathSegmentsAfterBase(path, basePath)
 	if len(commonPrefix) > 0 && hasSegmentPrefix(segments, commonPrefix) {
@@ -1747,7 +1728,6 @@ func toSnakeCase(input string) string {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			if unicode.IsUpper(r) && i > 0 && (unicode.IsLower(prev) || unicode.IsDigit(prev)) && !lastUnderscore {
 				b.WriteByte('_')
-				lastUnderscore = true
 			}
 			b.WriteRune(unicode.ToLower(r))
 			lastUnderscore = false
@@ -2050,15 +2030,6 @@ func isRequired(required map[string]struct{}, name string) bool {
 	return ok
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func selectDescription(summary, description string) string {
 	summaryHasSpaces := summary != "" && strings.ContainsAny(summary, " \t")
 
@@ -2195,7 +2166,7 @@ func humanizeConcatenated(s string) string {
 			rest := lower[len(prefix):]
 			words := strings.Fields(strings.ReplaceAll(strings.ReplaceAll(toSnakeCase(rest), "_", " "), "-", " "))
 			if len(words) > 0 {
-				sentence := strings.Title(prefix) + " " + strings.Join(words, " ")
+				sentence := cases.Title(language.English).String(prefix) + " " + strings.Join(words, " ")
 				return sentence
 			}
 		}

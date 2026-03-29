@@ -30,7 +30,7 @@ func buildHelpPrompt(outputDir string) string {
 	b.WriteString("Rules: under 80 chars, starts with a verb, no API jargon.\n\n")
 	b.WriteString("Current:\n")
 	for _, cmd := range commands {
-		b.WriteString(fmt.Sprintf("- %s: %q\n", cmd.Name, cmd.Description))
+		fmt.Fprintf(&b, "- %s: %q\n", cmd.Name, cmd.Description)
 	}
 	b.WriteString("\nReturn ONLY a JSON array, no other text:\n")
 	b.WriteString(`[{"command": "example", "description": "Improved description here"}]`)
@@ -50,7 +50,7 @@ func buildExamplePrompt(outputDir string) string {
 	cliName := filepath.Base(outputDir)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Write 2-3 realistic examples for each command in %s.\n", cliName))
+	fmt.Fprintf(&b, "Write 2-3 realistic examples for each command in %s.\n", cliName)
 	b.WriteString("Each example should show a real developer workflow with a comment.\n\n")
 	b.WriteString("Commands:\n")
 	for _, cmd := range commands {
@@ -66,10 +66,10 @@ func buildExamplePrompt(outputDir string) string {
 		if path == "" {
 			path = "/" + strings.ReplaceAll(cmd.Name, " ", "/")
 		}
-		b.WriteString(fmt.Sprintf("- %s (%s %s, flags: %s)\n", cmd.Name, method, path, flags))
+		fmt.Fprintf(&b, "- %s (%s %s, flags: %s)\n", cmd.Name, method, path, flags)
 	}
 	b.WriteString("\nReturn ONLY a JSON array, no other text:\n")
-	b.WriteString(fmt.Sprintf(`[{"command": "example list", "examples": ["# List all examples\n%s example list --limit 10"]}]`, cliName))
+	fmt.Fprintf(&b, `[{"command": "example list", "examples": ["# List all examples\n%s example list --limit 10"]}]`, cliName)
 	b.WriteString("\n")
 
 	return b.String()
@@ -88,9 +88,9 @@ func buildREADMEPrompt(outputDir, apiName string) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Rewrite this CLI README to sell the tool to developers.\n\n"))
-	b.WriteString(fmt.Sprintf("API: %s\n", apiName))
-	b.WriteString(fmt.Sprintf("Current README:\n%s\n\n", string(content)))
+	b.WriteString("Rewrite this CLI README to sell the tool to developers.\n\n")
+	fmt.Fprintf(&b, "API: %s\n", apiName)
+	fmt.Fprintf(&b, "Current README:\n%s\n\n", string(content))
 	b.WriteString("Write a README with:\n")
 	b.WriteString("1. One-line hook that makes developers want to install it\n")
 	b.WriteString("2. Why this exists (what gap it fills)\n")

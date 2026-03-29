@@ -17,52 +17,20 @@ linters:
   settings:
     errcheck:
       exclude-functions:
+        # CLI output — failure means stdout is broken, nothing to recover.
         - fmt.Fprintf
         - fmt.Fprintln
         - fmt.Fprint
         - (io.Writer).Write
-        - (*os).Close
-        - (*os.File).Close
-        - (io.Closer).Close
+        # Defer cleanup — failure is harmless, no recovery action.
         - os.Remove
         - os.RemoveAll
-        - os.Setenv
-        - (*encoding/json.Encoder).Encode
   exclusions:
     paths:
       - library
       - dist
     rules:
-      # Tolerate unchecked errors in test files for cleanup/setup helpers.
+      # Test files: unchecked errors in setup/cleanup helpers are noise.
       - path: '_test\.go'
         linters:
           - errcheck
-      # Pre-existing staticcheck issues — tracked for future cleanup.
-      - text: 'SA1019: strings\.Title'
-        linters:
-          - staticcheck
-      - text: 'S1039'
-        linters:
-          - staticcheck
-      - text: 'QF1012'
-        linters:
-          - staticcheck
-      - text: 'SA4009'
-        linters:
-          - staticcheck
-      # Pre-existing ineffectual assignments in parser — tracked for future cleanup.
-      - path: 'internal/openapi/parser\.go'
-        linters:
-          - ineffassign
-      # Pre-existing unused code — entire file is unused, tracked for future cleanup.
-      - path: 'internal/pipeline/spec_summary\.go'
-        linters:
-          - unused
-      - path: 'internal/pipeline/remediate\.go'
-        text: 'removeDeadFunctions'
-        linters:
-          - unused
-      - path: 'internal/openapi/parser\.go'
-        linters:
-          - unused
-          - staticcheck

@@ -59,7 +59,7 @@ func generateScaffoldPlan(ctx PlanContext) (string, error) {
 	writePlanHeader(&b, ctx.SeedData.APIName, "scaffold", "Generate the CLI with intelligence from research")
 
 	b.WriteString("## Phase Goal\n\n")
-	b.WriteString(fmt.Sprintf("Generate the %s CLI from the validated OpenAPI spec, incorporating research insights.\n\n", ctx.SeedData.APIName))
+	fmt.Fprintf(&b, "Generate the %s CLI from the validated OpenAPI spec, incorporating research insights.\n\n", ctx.SeedData.APIName)
 
 	b.WriteString("## Context\n\n")
 	writePipelineContext(&b, ctx.SeedData)
@@ -67,22 +67,22 @@ func generateScaffoldPlan(ctx PlanContext) (string, error) {
 	// Dynamic section: research insights
 	if ctx.Research != nil {
 		b.WriteString("## Research Insights\n\n")
-		b.WriteString(fmt.Sprintf("- **Novelty score:** %d/10 (%s)\n", ctx.Research.NoveltyScore, ctx.Research.Recommendation))
-		b.WriteString(fmt.Sprintf("- **Alternatives found:** %d\n", len(ctx.Research.Alternatives)))
+		fmt.Fprintf(&b, "- **Novelty score:** %d/10 (%s)\n", ctx.Research.NoveltyScore, ctx.Research.Recommendation)
+		fmt.Fprintf(&b, "- **Alternatives found:** %d\n", len(ctx.Research.Alternatives))
 
 		if ctx.Research.CompetitorInsights != nil {
 			ci := ctx.Research.CompetitorInsights
-			b.WriteString(fmt.Sprintf("- **Command target:** %d (based on competitor analysis)\n", ci.CommandTarget))
+			fmt.Fprintf(&b, "- **Command target:** %d (based on competitor analysis)\n", ci.CommandTarget)
 			if len(ci.UnmetFeatures) > 0 {
 				b.WriteString("- **Unmet features to include:**\n")
 				for _, f := range ci.UnmetFeatures[:min(5, len(ci.UnmetFeatures))] {
-					b.WriteString(fmt.Sprintf("  - %s\n", f))
+					fmt.Fprintf(&b, "  - %s\n", f)
 				}
 			}
 			if len(ci.PainPointsToAvoid) > 0 {
 				b.WriteString("- **Pain points to avoid:**\n")
 				for _, p := range ci.PainPointsToAvoid[:min(3, len(ci.PainPointsToAvoid))] {
-					b.WriteString(fmt.Sprintf("  - %s\n", p))
+					fmt.Fprintf(&b, "  - %s\n", p)
 				}
 			}
 		}
@@ -96,16 +96,16 @@ func generateScaffoldPlan(ctx PlanContext) (string, error) {
 		if len(suggestions) > 0 {
 			b.WriteString("Suggested flags based on past issues:\n")
 			for _, s := range suggestions {
-				b.WriteString(fmt.Sprintf("- `%s`\n", s))
+				fmt.Fprintf(&b, "- `%s`\n", s)
 			}
 			b.WriteString("\n")
 		}
 	}
 
 	b.WriteString("## What This Phase Must Produce\n\n")
-	b.WriteString(fmt.Sprintf("- Generated CLI source tree in %s\n", ctx.SeedData.OutputDir))
+	fmt.Fprintf(&b, "- Generated CLI source tree in %s\n", ctx.SeedData.OutputDir)
 	b.WriteString("- All seven generator quality gates passing\n")
-	b.WriteString(fmt.Sprintf("- Working CLI binary for %s\n\n", ctx.SeedData.APIName))
+	fmt.Fprintf(&b, "- Working CLI binary for %s\n\n", ctx.SeedData.APIName)
 
 	b.WriteString("## Codebase Pointers\n\n")
 	b.WriteString("- Generator entrypoint: printing-press generate --spec <url> --output <dir>\n")
@@ -130,17 +130,17 @@ func generateEnrichPlan(ctx PlanContext) (string, error) {
 		if len(ci.UnmetFeatures) > 0 {
 			b.WriteString("Features that competitors requested but never got (add these):\n")
 			for _, f := range ci.UnmetFeatures {
-				b.WriteString(fmt.Sprintf("- [ ] %s\n", f))
+				fmt.Fprintf(&b, "- [ ] %s\n", f)
 			}
 			b.WriteString("\n")
 		}
 		if ci.CommandTarget > 0 {
-			b.WriteString(fmt.Sprintf("**Target:** Generate at least %d commands (competitors max: %d)\n\n", ci.CommandTarget, int(float64(ci.CommandTarget)/1.2)))
+			fmt.Fprintf(&b, "**Target:** Generate at least %d commands (competitors max: %d)\n\n", ci.CommandTarget, int(float64(ci.CommandTarget)/1.2))
 		}
 	}
 
 	b.WriteString("## What This Phase Must Produce\n\n")
-	b.WriteString(fmt.Sprintf("- overlay.yaml in %s\n", ctx.SeedData.PipelineDir))
+	fmt.Fprintf(&b, "- overlay.yaml in %s\n", ctx.SeedData.PipelineDir)
 	b.WriteString("- At least one verified enrichment\n")
 	b.WriteString("- Overlay valid for downstream merge and regeneration\n\n")
 
@@ -168,9 +168,9 @@ func generateReviewPlan(ctx PlanContext) (string, error) {
 	b.WriteString("5. If any major dimension still fails, generate fix plans\n\n")
 
 	b.WriteString("## What This Phase Must Produce\n\n")
-	b.WriteString(fmt.Sprintf("- dogfood-results.json in %s\n", ctx.SeedData.PipelineDir))
-	b.WriteString(fmt.Sprintf("- scorecard.md in %s\n", ctx.SeedData.PipelineDir))
-	b.WriteString(fmt.Sprintf("- review.md in %s\n", ctx.SeedData.PipelineDir))
+	fmt.Fprintf(&b, "- dogfood-results.json in %s\n", ctx.SeedData.PipelineDir)
+	fmt.Fprintf(&b, "- scorecard.md in %s\n", ctx.SeedData.PipelineDir)
+	fmt.Fprintf(&b, "- review.md in %s\n", ctx.SeedData.PipelineDir)
 	b.WriteString("- Fix plans for any low-scoring dimensions\n")
 
 	return b.String(), nil
@@ -187,18 +187,18 @@ func generateComparativePlan(ctx PlanContext) (string, error) {
 
 	if ctx.Scorecard != nil {
 		b.WriteString("## Current Steinberger Score\n\n")
-		b.WriteString(fmt.Sprintf("- Overall: %d%% (%s)\n", ctx.Scorecard.Steinberger.Percentage, ctx.Scorecard.OverallGrade))
+		fmt.Fprintf(&b, "- Overall: %d%% (%s)\n", ctx.Scorecard.Steinberger.Percentage, ctx.Scorecard.OverallGrade)
 		if len(ctx.Scorecard.GapReport) > 0 {
 			b.WriteString("- Gaps:\n")
 			for _, g := range ctx.Scorecard.GapReport {
-				b.WriteString(fmt.Sprintf("  - %s\n", g))
+				fmt.Fprintf(&b, "  - %s\n", g)
 			}
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("## What This Phase Must Produce\n\n")
-	b.WriteString(fmt.Sprintf("- comparative-analysis.md in %s\n\n", ctx.SeedData.PipelineDir))
+	fmt.Fprintf(&b, "- comparative-analysis.md in %s\n\n", ctx.SeedData.PipelineDir)
 
 	return b.String(), nil
 }
@@ -216,17 +216,17 @@ func generateShipPlan(ctx PlanContext) (string, error) {
 	if ctx.Scorecard != nil {
 		b.WriteString("## Ship Decision\n\n")
 		if ctx.Scorecard.Steinberger.Percentage >= 65 {
-			b.WriteString(fmt.Sprintf("**SHIP** - Quality score %d%% (grade %s) meets threshold.\n\n", ctx.Scorecard.Steinberger.Percentage, ctx.Scorecard.OverallGrade))
+			fmt.Fprintf(&b, "**SHIP** - Quality score %d%% (grade %s) meets threshold.\n\n", ctx.Scorecard.Steinberger.Percentage, ctx.Scorecard.OverallGrade)
 		} else {
-			b.WriteString(fmt.Sprintf("**HOLD** - Quality score %d%% (grade %s) is below 65%% threshold.\n", ctx.Scorecard.Steinberger.Percentage, ctx.Scorecard.OverallGrade))
+			fmt.Fprintf(&b, "**HOLD** - Quality score %d%% (grade %s) is below 65%% threshold.\n", ctx.Scorecard.Steinberger.Percentage, ctx.Scorecard.OverallGrade)
 			b.WriteString("Fix the gaps identified in the scorecard before shipping.\n\n")
 		}
 	}
 
 	b.WriteString("## What This Phase Must Produce\n\n")
-	b.WriteString(fmt.Sprintf("- Git repository initialized in %s\n", ctx.SeedData.OutputDir))
+	fmt.Fprintf(&b, "- Git repository initialized in %s\n", ctx.SeedData.OutputDir)
 	b.WriteString("- GoReleaser config validated\n")
-	b.WriteString(fmt.Sprintf("- Morning report in %s\n", ctx.SeedData.PipelineDir))
+	fmt.Fprintf(&b, "- Morning report in %s\n", ctx.SeedData.PipelineDir)
 
 	return b.String(), nil
 }
@@ -235,20 +235,20 @@ func generateShipPlan(ctx PlanContext) (string, error) {
 
 func writePlanHeader(b *strings.Builder, apiName, phase, title string) {
 	b.WriteString("---\n")
-	b.WriteString(fmt.Sprintf("title: \"%s CLI Pipeline - %s\"\n", apiName, title))
+	fmt.Fprintf(b, "title: \"%s CLI Pipeline - %s\"\n", apiName, title)
 	b.WriteString("type: feat\n")
 	b.WriteString("status: seed\n")
-	b.WriteString(fmt.Sprintf("pipeline_phase: %s\n", phase))
-	b.WriteString(fmt.Sprintf("pipeline_api: %s\n", apiName))
-	b.WriteString(fmt.Sprintf("date: %s\n", time.Now().Format("2006-01-02")))
+	fmt.Fprintf(b, "pipeline_phase: %s\n", phase)
+	fmt.Fprintf(b, "pipeline_api: %s\n", apiName)
+	fmt.Fprintf(b, "date: %s\n", time.Now().Format("2006-01-02"))
 	b.WriteString("---\n\n")
 }
 
 func writePipelineContext(b *strings.Builder, sd SeedData) {
 	b.WriteString("## Context\n\n")
-	b.WriteString(fmt.Sprintf("- Pipeline directory: %s\n", sd.PipelineDir))
-	b.WriteString(fmt.Sprintf("- Output directory: %s\n", sd.OutputDir))
-	b.WriteString(fmt.Sprintf("- Spec URL: %s\n\n", sd.SpecURL))
+	fmt.Fprintf(b, "- Pipeline directory: %s\n", sd.PipelineDir)
+	fmt.Fprintf(b, "- Output directory: %s\n", sd.OutputDir)
+	fmt.Fprintf(b, "- Spec URL: %s\n\n", sd.SpecURL)
 }
 
 func loadResearchForPlanState(state *PipelineState) (*ResearchResult, error) {

@@ -217,7 +217,7 @@ func searchGitHubCLIs(apiName string) ([]Alternative, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -495,7 +495,7 @@ func fetchIssues(client *http.Client, owner, repo, labels string) ([]ghIssue, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -521,7 +521,7 @@ func fetchReadme(client *http.Client, owner, repo string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
@@ -555,7 +555,7 @@ func fetchAbandonedPRs(client *http.Client, owner, repo string) ([]ghPull, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)

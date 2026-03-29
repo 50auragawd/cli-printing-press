@@ -289,7 +289,7 @@ func readSpecBytes(specURL string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, specURL)
 		}
@@ -374,9 +374,9 @@ func PrintComparisonTable(results []*FullRunResult) string {
 	b.WriteString("=== CLI Printing Press - Full Run Comparison ===\n\n")
 
 	// Header
-	b.WriteString(fmt.Sprintf("%-25s", "Metric"))
+	fmt.Fprintf(&b, "%-25s", "Metric")
 	for _, r := range results {
-		b.WriteString(fmt.Sprintf("| %-18s", r.APIName+" ("+r.Level+")"))
+		fmt.Fprintf(&b, "| %-18s", r.APIName+" ("+r.Level+")")
 	}
 	b.WriteString("|\n")
 
@@ -532,9 +532,9 @@ func PrintComparisonTable(results []*FullRunResult) string {
 }
 
 func writeRow(b *strings.Builder, label string, results []*FullRunResult, fn func(*FullRunResult) string) {
-	b.WriteString(fmt.Sprintf("%-25s", label))
+	fmt.Fprintf(b, "%-25s", label)
 	for _, r := range results {
-		b.WriteString(fmt.Sprintf("| %-18s", fn(r)))
+		fmt.Fprintf(b, "| %-18s", fn(r))
 	}
 	b.WriteString("|\n")
 }
@@ -548,7 +548,7 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 
 	var b strings.Builder
 	b.WriteString("# Learnings Plan - CLI Printing Press Full Run\n\n")
-	b.WriteString(fmt.Sprintf("Generated: %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
+	fmt.Fprintf(&b, "Generated: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
 
 	// Summarize runs
 	b.WriteString("## Runs\n\n")
@@ -557,8 +557,8 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 		if len(r.Errors) > 0 {
 			status = fmt.Sprintf("%d errors", len(r.Errors))
 		}
-		b.WriteString(fmt.Sprintf("- **%s** (%s) - Gates %d/7, Duration %s, Status: %s\n",
-			r.APIName, r.Level, r.GatesPassed, r.Duration.Round(time.Second), status))
+		fmt.Fprintf(&b, "- **%s** (%s) - Gates %d/7, Duration %s, Status: %s\n",
+			r.APIName, r.Level, r.GatesPassed, r.Duration.Round(time.Second), status)
 	}
 	b.WriteString("\n")
 
@@ -606,7 +606,7 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 		avg := t.sum / t.total
 		if t.lowCount > 0 {
 			hasGaps = true
-			b.WriteString(fmt.Sprintf("- **%s** - low in %d/%d runs (avg %d/10)\n", name, t.lowCount, t.total, avg))
+			fmt.Fprintf(&b, "- **%s** - low in %d/%d runs (avg %d/10)\n", name, t.lowCount, t.total, avg)
 		}
 	}
 	if !hasGaps {
@@ -623,12 +623,12 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 		if t.total == 0 || t.lowCount == 0 {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("%d. **Improve %s templates** - affects %d/%d APIs tested\n",
-			priority, name, t.lowCount, t.total))
+		fmt.Fprintf(&b, "%d. **Improve %s templates** - affects %d/%d APIs tested\n",
+			priority, name, t.lowCount, t.total)
 		if advice, ok := dimensionAdvice[name]; ok {
 			// Include first line of advice
 			lines := strings.SplitN(advice, "\n", 2)
-			b.WriteString(fmt.Sprintf("   - %s\n", strings.TrimSpace(lines[0])))
+			fmt.Fprintf(&b, "   - %s\n", strings.TrimSpace(lines[0]))
 		}
 		priority++
 	}
@@ -641,7 +641,7 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 	b.WriteString("## Gate Failures\n\n")
 	for _, r := range results {
 		if r.GatesFailed > 0 {
-			b.WriteString(fmt.Sprintf("- **%s** - %d gates failed\n", r.APIName, r.GatesFailed))
+			fmt.Fprintf(&b, "- **%s** - %d gates failed\n", r.APIName, r.GatesFailed)
 		}
 	}
 	allPassed := true
@@ -661,13 +661,13 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 	for _, r := range results {
 		if r.Dogfood != nil {
 			if r.Dogfood.PathCheck.Tested > 0 {
-				b.WriteString(fmt.Sprintf("- **%s** - %s, path validity %d/%d (%d%%)\n",
-					r.APIName, r.Dogfood.Verdict, r.Dogfood.PathCheck.Valid, r.Dogfood.PathCheck.Tested, r.Dogfood.PathCheck.Pct))
+				fmt.Fprintf(&b, "- **%s** - %s, path validity %d/%d (%d%%)\n",
+					r.APIName, r.Dogfood.Verdict, r.Dogfood.PathCheck.Valid, r.Dogfood.PathCheck.Tested, r.Dogfood.PathCheck.Pct)
 			} else {
-				b.WriteString(fmt.Sprintf("- **%s** - %s\n", r.APIName, r.Dogfood.Verdict))
+				fmt.Fprintf(&b, "- **%s** - %s\n", r.APIName, r.Dogfood.Verdict)
 			}
 		} else {
-			b.WriteString(fmt.Sprintf("- **%s** - dogfood not run (%s)\n", r.APIName, r.DogfoodError))
+			fmt.Fprintf(&b, "- **%s** - dogfood not run (%s)\n", r.APIName, r.DogfoodError)
 		}
 	}
 	b.WriteString("\n")
@@ -676,14 +676,14 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 	b.WriteString("## Verification Summary\n\n")
 	for _, r := range results {
 		if r.Verification != nil {
-			b.WriteString(fmt.Sprintf("- **%s** - %s (paths:%d flags:%d ghost:%d fts:%d)\n",
+			fmt.Fprintf(&b, "- **%s** - %s (paths:%d flags:%d ghost:%d fts:%d)\n",
 				r.APIName, r.Verification.Verdict,
 				r.Verification.HallucinatedPaths,
 				r.Verification.DeadFlags,
 				r.Verification.GhostTables,
-				r.Verification.OrphanFTS))
+				r.Verification.OrphanFTS)
 		} else {
-			b.WriteString(fmt.Sprintf("- **%s** - not run (%s)\n", r.APIName, r.VerificationError))
+			fmt.Fprintf(&b, "- **%s** - not run (%s)\n", r.APIName, r.VerificationError)
 		}
 	}
 	b.WriteString("\n")

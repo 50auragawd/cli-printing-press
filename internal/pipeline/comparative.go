@@ -184,18 +184,18 @@ func writeComparativeReport(result *ComparativeResult, research *ResearchResult,
 	var b strings.Builder
 
 	b.WriteString("# Comparative Analysis\n\n")
-	b.WriteString(fmt.Sprintf("**Recommendation: %s**\n\n", strings.ToUpper(result.Recommendation)))
-	b.WriteString(fmt.Sprintf("Our score: %d/100\n\n", result.OurScore))
+	fmt.Fprintf(&b, "**Recommendation: %s**\n\n", strings.ToUpper(result.Recommendation))
+	fmt.Fprintf(&b, "Our score: %d/100\n\n", result.OurScore)
 
 	// Score table
 	if len(result.Alternatives) > 0 {
 		b.WriteString("## Score Table\n\n")
 		b.WriteString("| Tool | Breadth | Install | Auth | Output | Agent | Fresh | Total |\n")
 		b.WriteString("|------|---------|---------|------|--------|-------|-------|-------|\n")
-		b.WriteString(fmt.Sprintf("| **Ours** | 20 | 15 | 15 | 15 | 15 | 15 | **%d** |\n", result.OurScore))
+		fmt.Fprintf(&b, "| **Ours** | 20 | 15 | 15 | 15 | 15 | 15 | **%d** |\n", result.OurScore)
 		for _, a := range result.Alternatives {
-			b.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %d | %d | %d | **%d** |\n",
-				a.Name, a.Breadth, a.InstallFriction, a.AuthUX, a.OutputFormats, a.AgentFriendly, a.Freshness, a.Total))
+			fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %d | %d | **%d** |\n",
+				a.Name, a.Breadth, a.InstallFriction, a.AuthUX, a.OutputFormats, a.AgentFriendly, a.Freshness, a.Total)
 		}
 		b.WriteString("\n")
 	} else {
@@ -205,20 +205,20 @@ func writeComparativeReport(result *ComparativeResult, research *ResearchResult,
 	// Advantages
 	b.WriteString("## Our Advantages\n\n")
 	for _, a := range result.Advantages {
-		b.WriteString(fmt.Sprintf("- %s\n", a))
+		fmt.Fprintf(&b, "- %s\n", a)
 	}
 	b.WriteString("\n")
 
 	// Gaps
 	b.WriteString("## Gaps to Address\n\n")
 	for _, g := range result.Gaps {
-		b.WriteString(fmt.Sprintf("- %s\n", g))
+		fmt.Fprintf(&b, "- %s\n", g)
 	}
 	b.WriteString("\n")
 
 	// Novelty context from research
 	if research != nil && research.NoveltyScore > 0 {
-		b.WriteString(fmt.Sprintf("## Research Context\n\nNovelty score: %d/10 (%s)\n", research.NoveltyScore, research.Recommendation))
+		fmt.Fprintf(&b, "## Research Context\n\nNovelty score: %d/10 (%s)\n", research.NoveltyScore, research.Recommendation)
 	}
 
 	return os.WriteFile(filepath.Join(pipelineDir, "comparative-analysis.md"), []byte(b.String()), 0o644)

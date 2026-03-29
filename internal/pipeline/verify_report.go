@@ -158,7 +158,7 @@ func (r *VerificationReport) Markdown() string {
 	var b strings.Builder
 
 	b.WriteString("# Proof of Behavior Report\n\n")
-	b.WriteString(fmt.Sprintf("**Verdict: %s**\n\n", r.Verdict))
+	fmt.Fprintf(&b, "**Verdict: %s**\n\n", r.Verdict)
 
 	// Path Proof section.
 	validPaths := 0
@@ -168,14 +168,14 @@ func (r *VerificationReport) Markdown() string {
 		}
 	}
 	b.WriteString("## Path Proof\n")
-	b.WriteString(fmt.Sprintf("Tested: %d | Valid: %d | Hallucinated: %d\n\n", len(r.Paths), validPaths, r.HallucinatedPaths))
+	fmt.Fprintf(&b, "Tested: %d | Valid: %d | Hallucinated: %d\n\n", len(r.Paths), validPaths, r.HallucinatedPaths)
 
 	if r.HallucinatedPaths > 0 {
 		b.WriteString("| Path | Status |\n")
 		b.WriteString("|------|--------|\n")
 		for _, p := range r.Paths {
 			if !p.Valid {
-				b.WriteString(fmt.Sprintf("| `%s` | INVALID |\n", p.Path))
+				fmt.Fprintf(&b, "| `%s` | INVALID |\n", p.Path)
 			}
 		}
 		b.WriteString("\n")
@@ -183,12 +183,12 @@ func (r *VerificationReport) Markdown() string {
 
 	// Flag Proof section.
 	b.WriteString("## Flag Proof\n")
-	b.WriteString(fmt.Sprintf("Total: %d | Dead: %d\n\n", len(r.Flags), r.DeadFlags))
+	fmt.Fprintf(&b, "Total: %d | Dead: %d\n\n", len(r.Flags), r.DeadFlags)
 
 	if r.DeadFlags > 0 {
 		for _, f := range r.Flags {
 			if f.References == 0 {
-				b.WriteString(fmt.Sprintf("- `%s` (0 references)\n", f.Flag))
+				fmt.Fprintf(&b, "- `%s` (0 references)\n", f.Flag)
 			}
 		}
 		b.WriteString("\n")
@@ -196,7 +196,7 @@ func (r *VerificationReport) Markdown() string {
 
 	// Pipeline Proof section.
 	b.WriteString("## Pipeline Proof\n")
-	b.WriteString(fmt.Sprintf("Tables: %d | Ghost: %d | Orphan FTS: %d\n\n", len(r.Pipeline), r.GhostTables, r.OrphanFTS))
+	fmt.Fprintf(&b, "Tables: %d | Ghost: %d | Orphan FTS: %d\n\n", len(r.Pipeline), r.GhostTables, r.OrphanFTS)
 
 	if len(r.Pipeline) > 0 {
 		b.WriteString("| Table | WRITE | READ | SEARCH |\n")
@@ -205,20 +205,20 @@ func (r *VerificationReport) Markdown() string {
 			w := boolMark(p.HasWrite)
 			rd := boolMark(p.HasRead)
 			s := boolMark(p.HasSearch)
-			b.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", p.Table, w, rd, s))
+			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", p.Table, w, rd, s)
 		}
 		b.WriteString("\n")
 	}
 
 	// Auth Proof section.
 	b.WriteString("## Auth Proof\n")
-	b.WriteString(fmt.Sprintf("Spec: %s | Generated: %s | Match: %t\n\n", r.Auth.SpecScheme, r.Auth.GeneratedScheme, !r.Auth.Mismatch))
+	fmt.Fprintf(&b, "Spec: %s | Generated: %s | Match: %t\n\n", r.Auth.SpecScheme, r.Auth.GeneratedScheme, !r.Auth.Mismatch)
 
 	// Issues section.
 	if len(r.Issues) > 0 {
 		b.WriteString("## Issues\n")
 		for _, issue := range r.Issues {
-			b.WriteString(fmt.Sprintf("- %s\n", issue))
+			fmt.Fprintf(&b, "- %s\n", issue)
 		}
 		b.WriteString("\n")
 	}

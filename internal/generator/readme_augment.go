@@ -72,7 +72,7 @@ func AugmentREADME(readmePath, evidenceDir string) error {
 			resName := strings.TrimSuffix(e.Name(), "-help.txt")
 			output, err := os.ReadFile(filepath.Join(resDir, e.Name()))
 			if err == nil && len(output) > 0 {
-				section.WriteString(fmt.Sprintf("### %s\n\n```\n", resName))
+				fmt.Fprintf(&section, "### %s\n\n```\n", resName)
 				section.Write(output)
 				section.WriteString("```\n\n")
 			}
@@ -90,7 +90,7 @@ func AugmentREADME(readmePath, evidenceDir string) error {
 				output, err := os.ReadFile(filepath.Join(tier2Dir, e.Name()))
 				if err == nil && len(output) > 0 {
 					cmdName := strings.TrimSuffix(e.Name(), ".txt")
-					section.WriteString(fmt.Sprintf("#### %s\n\n```json\n", cmdName))
+					fmt.Fprintf(&section, "#### %s\n\n```json\n", cmdName)
 					// Truncate very long output
 					s := string(output)
 					if len(s) > 2000 {

@@ -1765,10 +1765,10 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("# Scorecard: %s\n\n", sc.APIName))
-	b.WriteString(fmt.Sprintf("**Overall Grade: %s** (%d%%)\n\n", sc.OverallGrade, sc.Steinberger.Percentage))
+	fmt.Fprintf(&b, "# Scorecard: %s\n\n", sc.APIName)
+	fmt.Fprintf(&b, "**Overall Grade: %s** (%d%%)\n\n", sc.OverallGrade, sc.Steinberger.Percentage)
 	if len(sc.UnscoredDimensions) > 0 {
-		b.WriteString(fmt.Sprintf("Unscored dimensions omitted from the total denominator: %s\n\n", strings.Join(sc.UnscoredDimensions, ", ")))
+		fmt.Fprintf(&b, "Unscored dimensions omitted from the total denominator: %s\n\n", strings.Join(sc.UnscoredDimensions, ", "))
 	}
 
 	// Steinberger dimensions table
@@ -1800,11 +1800,11 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 	}
 	for _, d := range dimensions {
 		if sc.IsDimensionUnscored(d.nameKey) {
-			b.WriteString(fmt.Sprintf("| %s | N/A |\n", d.name))
+			fmt.Fprintf(&b, "| %s | N/A |\n", d.name)
 			continue
 		}
 		bar := strings.Repeat("#", d.score) + strings.Repeat(".", 10-d.score)
-		b.WriteString(fmt.Sprintf("| %s | %d/10 %s |\n", d.name, d.score, bar))
+		fmt.Fprintf(&b, "| %s | %d/10 %s |\n", d.name, d.score, bar)
 	}
 	typeDimensions := []struct {
 		name  string
@@ -1815,9 +1815,9 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 	}
 	for _, d := range typeDimensions {
 		bar := strings.Repeat("#", d.score) + strings.Repeat(".", 5-d.score)
-		b.WriteString(fmt.Sprintf("| %s | %d/5 %s |\n", d.name, d.score, bar))
+		fmt.Fprintf(&b, "| %s | %d/5 %s |\n", d.name, d.score, bar)
 	}
-	b.WriteString(fmt.Sprintf("| **Total** | **%d/100** |\n\n", s.Total))
+	fmt.Fprintf(&b, "| **Total** | **%d/100** |\n\n", s.Total)
 
 	// Competitor comparison
 	if len(sc.CompetitorScores) > 0 {
@@ -1829,7 +1829,7 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 			if cs.WeWin {
 				winner = "Us"
 			}
-			b.WriteString(fmt.Sprintf("| %s | %d | %d | %s |\n", cs.Name, cs.OurScore, cs.TheirScore, winner))
+			fmt.Fprintf(&b, "| %s | %d | %d | %s |\n", cs.Name, cs.OurScore, cs.TheirScore, winner)
 		}
 		b.WriteString("\n")
 	}
@@ -1838,7 +1838,7 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 	if len(sc.GapReport) > 0 {
 		b.WriteString("## Gaps\n\n")
 		for _, g := range sc.GapReport {
-			b.WriteString(fmt.Sprintf("- %s\n", g))
+			fmt.Fprintf(&b, "- %s\n", g)
 		}
 		b.WriteString("\n")
 	}
