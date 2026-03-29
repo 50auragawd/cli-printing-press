@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mvanhorn/cli-printing-press/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -13,13 +14,12 @@ import (
 
 func TestGoreleaserLdflagsTargetMatchesVersionVar(t *testing.T) {
 	// The goreleaser config injects the version via ldflags into
-	// internal/cli.version. If the variable is renamed or moved,
+	// internal/version.Version. If the variable is renamed or moved,
 	// goreleaser silently injects into nothing and the binary
 	// reports the hardcoded fallback. This test catches that drift.
 
-	// 1. Verify the version variable exists and is settable in this package.
-	//    (If this test compiles, the variable exists. We just confirm it's a string.)
-	assert.IsType(t, "", version)
+	// 1. Verify the version variable exists and is settable.
+	assert.IsType(t, "", version.Version)
 
 	// 2. Verify the goreleaser config references the correct ldflags path.
 	data, err := os.ReadFile("../../.goreleaser.yaml")
@@ -35,19 +35,19 @@ func TestGoreleaserLdflagsTargetMatchesVersionVar(t *testing.T) {
 
 	ldflags := strings.Join(config.Builds[0].Ldflags, " ")
 	assert.Contains(t, ldflags,
-		"github.com/mvanhorn/cli-printing-press/internal/cli.version",
-		"goreleaser ldflags must target internal/cli.version")
+		"github.com/mvanhorn/cli-printing-press/internal/version.Version",
+		"goreleaser ldflags must target internal/version.Version")
 }
 
 func TestReleasePleaseAnnotationExists(t *testing.T) {
 	// release-please uses the x-release-please-version annotation
-	// to find and bump the hardcoded version in root.go. If the
-	// annotation is removed, release-please silently stops updating it.
-	data, err := os.ReadFile("root.go")
+	// to find and bump the hardcoded version. If the annotation is
+	// removed, release-please silently stops updating it.
+	data, err := os.ReadFile("../version/version.go")
 	require.NoError(t, err)
 
 	assert.Contains(t, string(data), "x-release-please-version",
-		"root.go must have x-release-please-version annotation for automated version bumps")
+		"version.go must have x-release-please-version annotation for automated version bumps")
 }
 
 func TestVersionConsistencyAcrossFiles(t *testing.T) {
@@ -78,6 +78,6 @@ func TestVersionConsistencyAcrossFiles(t *testing.T) {
 	// All three should match
 	assert.Equal(t, plugin.Version, market.Plugins[0].Version,
 		"plugin.json and marketplace.json versions must match")
-	assert.Equal(t, plugin.Version, version,
-		"plugin.json and root.go hardcoded version must match")
+	assert.Equal(t, plugin.Version, version.Version,
+		"plugin.json and version.go hardcoded version must match")
 }

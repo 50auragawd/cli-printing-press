@@ -52,7 +52,7 @@ Every commit and PR title must include one of these scopes. The `PR Title` actio
 **Never manually edit version numbers.** Three files carry the version and release-please keeps them in sync:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`
-- `internal/cli/root.go` → `var version` (annotated with `x-release-please-version`)
+- `internal/version/version.go` → `var Version` (annotated with `x-release-please-version`)
 
 `TestVersionConsistencyAcrossFiles` in `internal/cli/release_test.go` will fail if versions drift.
 

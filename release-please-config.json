@@ -17,7 +17,7 @@
         },
         {
           "type": "generic",
-          "path": "internal/cli/root.go"
+          "path": "internal/version/version.go"
         }
       ]
     }

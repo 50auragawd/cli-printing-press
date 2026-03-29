@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"time"
 
@@ -23,29 +22,10 @@ import (
 	"github.com/mvanhorn/cli-printing-press/internal/openapi"
 	"github.com/mvanhorn/cli-printing-press/internal/pipeline"
 	"github.com/mvanhorn/cli-printing-press/internal/spec"
+	"github.com/mvanhorn/cli-printing-press/internal/version"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
-
-var version = "0.4.0" // x-release-please-version
-
-func init() {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return
-	}
-	v := info.Main.Version
-	// Only use the build info version when it's a real tagged release.
-	// Skip empty, "(devel)", and pseudo-versions like "v0.0.0-20260328...".
-	if v == "" || v == "(devel)" {
-		return
-	}
-	trimmed := strings.TrimPrefix(v, "v")
-	if strings.HasPrefix(trimmed, "0.0.0-") {
-		return
-	}
-	version = trimmed
-}
 
 func Execute() error {
 	rootCmd := &cobra.Command{
@@ -53,7 +33,7 @@ func Execute() error {
 		Short:         "Describe your API. Get a production CLI.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       version,
+		Version:       version.Version,
 	}
 	rootCmd.SetVersionTemplate("printing-press {{.Version}}\n")
 
@@ -472,11 +452,11 @@ func newVersionCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if asJSON {
 				return json.NewEncoder(os.Stdout).Encode(map[string]string{
-					"version": version,
+					"version": version.Version,
 					"go":      runtime.Version(),
 				})
 			}
-			fmt.Printf("printing-press %s\n", version)
+			fmt.Printf("printing-press %s\n", version.Version)
 			return nil
 		},
 	}
