@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,7 +224,15 @@ func CopyDir(src, dst string) error {
 		return err
 	}
 
-	return filepath.Walk(src, func(path string, _ os.FileInfo, walkErr error) error {
+	srcRoot, err := filepath.Abs(src)
+	if err != nil {
+		return fmt.Errorf("resolving source dir: %w", err)
+	}
+
+	// WalkDir (unlike Walk) does not follow directory symlinks, so the
+	// callback sees them as symlink entries and we can validate them
+	// without descending into potentially huge or circular targets.
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -237,25 +246,56 @@ func CopyDir(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 
-		info, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
-		}
-
-		if info.Mode()&os.ModeSymlink != 0 {
+		// d.Type() returns mode bits from Lstat, so symlinks (including
+		// directory symlinks) are detected before any descent.
+		if d.Type()&os.ModeSymlink != 0 {
 			link, err := os.Readlink(path)
 			if err != nil {
 				return err
 			}
+			ok, err := symlinkTargetWithinRoot(srcRoot, path, link)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("symlink %s points outside source tree", path)
+			}
 			return os.Symlink(link, target)
 		}
 
+		if d.IsDir() {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			return os.MkdirAll(target, info.Mode())
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
 		return copyFile(path, target, info.Mode())
 	})
+}
+
+func symlinkTargetWithinRoot(root, path, link string) (bool, error) {
+	resolved := link
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(filepath.Dir(path), resolved)
+	}
+
+	absResolved, err := filepath.Abs(resolved)
+	if err != nil {
+		return false, fmt.Errorf("resolving symlink target for %s: %w", path, err)
+	}
+
+	rel, err := filepath.Rel(root, absResolved)
+	if err != nil {
+		return false, fmt.Errorf("checking symlink target for %s: %w", path, err)
+	}
+
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))), nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
