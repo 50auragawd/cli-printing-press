@@ -361,27 +361,33 @@ Present to the user via `AskUserQuestion`:
 
 ### If user approves sniff
 
-#### Step 1: Detect capture tool
+#### Step 1: Detect capture tools
 
-Check which browser automation tool is available, in preference order:
+Check which browser automation tools are available:
 
 ```bash
-# Prefer browser-use (autonomous agent, HAR includes response bodies)
+HAS_BROWSER_USE=false
+HAS_AGENT_BROWSER=false
 if command -v browser-use >/dev/null 2>&1 || uvx browser-use --version >/dev/null 2>&1; then
-  SNIFF_BACKEND="browser-use"
-# Fall back to agent-browser (precise control, Claude drives the loop)
-elif command -v agent-browser >/dev/null 2>&1; then
-  SNIFF_BACKEND="agent-browser"
-else
-  SNIFF_BACKEND="none"
+  HAS_BROWSER_USE=true
+fi
+if command -v agent-browser >/dev/null 2>&1; then
+  HAS_AGENT_BROWSER=true
 fi
 ```
 
-If a tool is found, report: "Using **<tool>** for traffic capture." and proceed to Step 2.
+**Report what was found AND what's missing.** Always tell the user the full picture:
+
+- **Both installed**: "Found browser-use (preferred for autonomous exploration) and agent-browser. Using browser-use." → proceed to Step 2a.
+- **Only agent-browser**: "Found agent-browser but not browser-use. browser-use is preferred — it explores autonomously and captures response bodies in HAR. Want me to install it? (~2 min via `uv tool install browser-use`)" → offer to install browser-use, fall back to agent-browser if declined.
+- **Only browser-use**: "Found browser-use. Using it for traffic capture." → proceed to Step 2a.
+- **Neither**: proceed to Step 1b (install).
+
+**The goal is both tools installed.** browser-use is better for autonomous exploration (it drives itself). agent-browser is better for precise, Claude-directed interaction. Having both gives the best coverage. If one is missing, recommend installing it even if the other is available.
 
 #### Step 1b: Install capture tool (if none found)
 
-If `SNIFF_BACKEND="none"`, neither capture tool is installed. Offer to install one via `AskUserQuestion`:
+If neither tool is installed, offer to install via `AskUserQuestion`:
 
 > "No browser automation tool found. I need one to sniff the live site. Which would you like to install?"
 >
