@@ -63,10 +63,14 @@ func WriteEnrichedCapture(capture *EnrichedCapture, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("opening output file: %w", err)
 	}
-	defer file.Close()
 
 	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("writing enriched json: %w", err)
+	}
+
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("closing output file: %w", err)
 	}
 
 	return nil
