@@ -25,6 +25,8 @@ Generate the best useful CLI for an API without burning an hour on phase theater
 /printing-press Discord codex
 /printing-press --spec ./openapi.yaml
 /printing-press --har ./capture.har --name MyAPI
+/printing-press https://postman.com/explore
+/printing-press https://postman.com
 /printing-press emboss notion
 /printing-press emboss notion-pp-cli
 /printing-press emboss ~/printing-press/library/notion-pp-cli
@@ -200,6 +202,36 @@ These do not need to be 200+ lines. Keep them dense, evidence-backed, and direct
 Before new research:
 
 1. Resolve the spec source.
+
+   **URL Detection** — If the argument contains `://`, it's a URL. Determine whether it's a spec or a website before proceeding.
+
+   **Step 1: Content probe.** Fetch the URL (light GET via `WebFetch`) and inspect the response:
+   - Check the `Content-Type` header and the first few lines of the body.
+   - If the fetch fails (timeout, 404, DNS error), skip to Step 2 — treat it as a website.
+
+   If the content starts with `openapi:`, `swagger:`, or is valid JSON containing an `"openapi"` or `"swagger"` key → it's a spec. Treat as `--spec` and proceed directly. No disambiguation needed.
+
+   If the content is a HAR file (JSON with `"log"` and `"entries"` keys) → treat as `--har` and proceed directly.
+
+   **Step 2: Disambiguation.** If the content is HTML or the probe failed, ask the user what they want. Extract the site name from the hostname (e.g., `postman.com` → "Postman", `app.linear.app` → "Linear"). Derive `<api>` from the site name using the same `cleanSpecName` normalization the generator uses.
+
+   Use `AskUserQuestion` with:
+   - **question:** `"What kind of CLI do you want for <SiteName>?"`
+   - **header:** `"CLI target"`
+   - **multiSelect:** `false`
+   - **options:**
+     1. **label:** `"<SiteName>'s official API"` — **description:** `"Build a CLI for <SiteName>'s documented API (e.g. REST endpoints, webhooks, OAuth)"`
+     2. **label:** `"The <SiteName> website itself"` — **description:** `"Build a CLI that does what the website does — I'll figure out the underlying API by exploring the site"`
+
+   The user can also pick the automatic "Other" option to describe what they're after in free text.
+
+   **Routing after disambiguation:**
+   - "<SiteName>'s official API" → use `<api>` as the argument, proceed with normal discovery (Phase 1 research, then Phase 1.7 sniff gate evaluates independently as usual)
+   - "The <SiteName> website itself" → use `<api>` as the argument, set `SNIFF_TARGET_URL=<url>`. Proceed to Phase 1 research. When Phase 1.7 is reached, skip the sniff gate decision and go directly to "If user approves sniff" (the user already approved in Phase 0 — do not re-ask). Use `SNIFF_TARGET_URL` as the starting URL for browser capture.
+   - "Other" → read the user's free-form response and adapt
+
+   **End of URL detection.** The remaining spec resolution rules apply when the argument is NOT a URL:
+
    - If the user passed `--har <path>`, this is a HAR-first run. Run `printing-press sniff --har <path> --name <api> --output "$RESEARCH_DIR/<api>-sniff-spec.yaml"` to generate a spec from captured traffic. Use the generated spec as the primary spec source for the rest of the pipeline. Skip the sniff gate in Phase 1.7 (sniff already ran).
    - If the user passed `--spec`, use it directly (existing behavior).
    - Otherwise, proceed with normal discovery (catalog, KnownSpecs, apis-guru, web search).
@@ -280,6 +312,8 @@ Resolve the API key gate (or skip it for public APIs) before moving to Phase 1.
 
 ## Phase 1: Research Brief
 
+**When `SNIFF_TARGET_URL` is set:** Skip the catalog check, spec/docs search, and SDK wrapper search — none of these exist for an undocumented website feature. Focus research on understanding what the site/feature does, who uses it, what workflows it supports, and what competitors offer similar functionality. The spec will come from sniffing in Phase 1.7.
+
 Before starting research, check if the API has a built-in catalog entry:
 
 ```bash
@@ -358,7 +392,7 @@ Suggested shape:
 
 ## Phase 1.7: Sniff Gate
 
-After Phase 1 research, evaluate whether sniffing the live site would improve the spec. Skip this gate entirely if the user already passed `--har` or `--spec` (spec source is already resolved).
+After Phase 1 research, evaluate whether sniffing the live site would improve the spec. Skip this gate entirely if the user already passed `--har` or `--spec` (spec source is already resolved). If `SNIFF_TARGET_URL` is set (user chose "The website itself" in Phase 0), skip the decision matrix and go directly to "If user approves sniff" — the user already approved, and `SNIFF_TARGET_URL` is the starting URL.
 
 **IMPORTANT:** When the decision matrix below says "Offer sniff", you MUST ask the user via `AskUserQuestion`. Do NOT silently decide to skip sniff because the docs look thorough — the user should make that call. The only case where you skip silently is "spec appears complete" (no gap detected).
 
