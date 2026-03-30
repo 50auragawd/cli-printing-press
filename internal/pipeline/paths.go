@@ -93,6 +93,10 @@ func RunPipelineDir(runID string) string {
 	return filepath.Join(RunRoot(runID), "pipeline")
 }
 
+func RunDiscoveryDir(runID string) string {
+	return filepath.Join(RunRoot(runID), "discovery")
+}
+
 func PublishedLibraryRoot() string {
 	return filepath.Join(PressHome(), "library")
 }
@@ -115,6 +119,10 @@ func ArchivedProofsDir(apiName, runID string) string {
 
 func ArchivedPipelineDir(apiName, runID string) string {
 	return filepath.Join(ArchivedManuscriptDir(apiName, runID), "pipeline")
+}
+
+func ArchivedDiscoveryDir(apiName, runID string) string {
+	return filepath.Join(ArchivedManuscriptDir(apiName, runID), "discovery")
 }
 
 func ArchivedManifestPath(apiName, runID string) string {

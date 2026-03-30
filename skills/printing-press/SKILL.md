@@ -158,6 +158,7 @@ API_RUN_DIR="$PRESS_RUNSTATE/runs/$RUN_ID"
 RESEARCH_DIR="$API_RUN_DIR/research"
 PROOFS_DIR="$API_RUN_DIR/proofs"
 PIPELINE_DIR="$API_RUN_DIR/pipeline"
+DISCOVERY_DIR="$API_RUN_DIR/discovery"
 STAMP="$(date +%Y-%m-%d-%H%M%S)"
 
 mkdir -p "$RESEARCH_DIR" "$PROOFS_DIR" "$PIPELINE_DIR"
@@ -526,7 +527,8 @@ Open a headless browser session, then visit each page and collect API URLs using
 
 ```bash
 # Start collection
-SNIFF_URLS="$API_RUN_DIR/sniff-urls.txt"
+mkdir -p "$DISCOVERY_DIR"
+SNIFF_URLS="$DISCOVERY_DIR/sniff-urls.txt"
 > "$SNIFF_URLS"
 
 # For EACH target page (run this loop in foreground — do NOT use run_in_background):
@@ -554,7 +556,7 @@ Replace `<api-domain-1>`, `<api-domain-2>` etc. with the API domains discovered 
 After collecting from all pages:
 ```bash
 # Strip query parameters and deduplicate to find unique API path patterns
-cat "$SNIFF_URLS" | sed 's/\?.*//' | sort -u > "$API_RUN_DIR/sniff-unique-paths.txt"
+cat "$SNIFF_URLS" | sed 's/\?.*//' | sort -u > "$DISCOVERY_DIR/sniff-unique-paths.txt"
 ```
 
 **Step 2a.4: Generate enriched capture**
@@ -607,23 +609,23 @@ If browser-use is not available, use agent-browser with Claude driving the explo
    # Apply sniff pacing between response body fetches
    # These are direct API calls and most likely to trigger rate limits
    ```
-   Combine HAR metadata + response bodies into an enriched capture JSON at `$API_RUN_DIR/sniff-capture.json`.
+   Combine HAR metadata + response bodies into an enriched capture JSON at `$DISCOVERY_DIR/sniff-capture.json`.
 
 4. **Stop HAR recording**:
    ```bash
-   agent-browser network har stop "$API_RUN_DIR/sniff-capture.har"
+   agent-browser network har stop "$DISCOVERY_DIR/sniff-capture.har"
    ```
 
 #### Step 3: Analyze capture
 
 Run websniff on the captured traffic:
 ```bash
-printing-press sniff --har "$API_RUN_DIR/sniff-capture.har" --name <api> --output "$RESEARCH_DIR/<api>-sniff-spec.yaml"
+printing-press sniff --har "$DISCOVERY_DIR/sniff-capture.har" --name <api> --output "$RESEARCH_DIR/<api>-sniff-spec.yaml"
 ```
 
 If using agent-browser's enriched capture format instead:
 ```bash
-printing-press sniff --har "$API_RUN_DIR/sniff-capture.json" --name <api> --output "$RESEARCH_DIR/<api>-sniff-spec.yaml"
+printing-press sniff --har "$DISCOVERY_DIR/sniff-capture.json" --name <api> --output "$RESEARCH_DIR/<api>-sniff-spec.yaml"
 ```
 
 #### Step 4: Report and update spec source
@@ -633,6 +635,27 @@ Report: "Sniff discovered **N endpoints** across **M resources**. [X new endpoin
 Update the spec source for Phase 2:
 - **Enrichment mode**: Phase 2 will use `--spec <original> --spec <sniff-spec> --name <api>` to merge both
 - **Primary mode**: Phase 2 will use `--spec <sniff-spec>` directly
+
+#### Step 5: Write sniff discovery report
+
+Write a structured sniff provenance report to `$DISCOVERY_DIR/sniff-report.md`. This report preserves the discovery evidence so a future maintainer can reproduce or extend the sniff.
+
+The report must contain these sections:
+
+1. **Pages Visited** — List every URL browsed during the sniff, in order. Include the page purpose (e.g., "Homepage", "Search results for 'stripe'", "Team detail page").
+
+2. **Sniff Configuration** — Backend used (browser-use, agent-browser, or manual HAR), pacing settings (initial delay, final effective rate), and proxy pattern detection result (proxy-envelope detected / not detected, with the proxy URL if applicable).
+
+3. **Endpoints Discovered** — A markdown table with columns: Method, Path, Status Code, Content-Type. One row per unique endpoint observed.
+
+4. **Coverage Analysis** — What resource types were exercised (e.g., "collections, workspaces, teams, categories") and what was likely missed. Compare against the Phase 1 research brief to identify gaps (e.g., "Brief mentions 'flows' but no flow endpoints were discovered during sniff").
+
+5. **Response Samples** — For each unique response shape (keyed by status code + content-type category), include a truncated sample:
+   - JSON/text responses: first 2KB or 100 lines, whichever is smaller
+   - Binary responses (images, protobuf, etc.): skip content, include a metadata note: `Binary response: <content-type>, <size> bytes`
+   - Aim for one sample per unique shape, not one per endpoint
+
+6. **Rate Limiting Events** — Any 429 responses encountered, delays applied, and effective sniff rate achieved (e.g., "Sniffed 7 endpoints at ~1.5 req/s effective rate, one 429 at request #4").
 
 ### If user declines sniff
 
@@ -980,12 +1003,23 @@ Skip this phase entirely if the final shipcheck verdict is `hold`. Only proceed 
 
 ### Archive manuscripts
 
-The run's research and proofs are in `$API_RUN_DIR/` (runstate). The `publish package` command looks for them at `$PRESS_MANUSCRIPTS/<api>/<run-id>/`. Archive them now so they're available whether the user publishes immediately or later.
+The run's research, proofs, and discovery artifacts are in `$API_RUN_DIR/` (runstate). The `publish package` command looks for them at `$PRESS_MANUSCRIPTS/<api>/<run-id>/`. Archive them now so they're available whether the user publishes immediately or later.
 
 ```bash
 mkdir -p "$PRESS_MANUSCRIPTS/<api>/$RUN_ID"
 cp -r "$RESEARCH_DIR" "$PRESS_MANUSCRIPTS/<api>/$RUN_ID/research" 2>/dev/null || true
 cp -r "$PROOFS_DIR" "$PRESS_MANUSCRIPTS/<api>/$RUN_ID/proofs" 2>/dev/null || true
+
+# Archive discovery artifacts (sniff captures, URL lists, sniff report).
+# Strip response bodies from HAR before archiving to control size.
+if [ -d "$DISCOVERY_DIR" ]; then
+  for har in "$DISCOVERY_DIR"/sniff-capture.har "$DISCOVERY_DIR"/sniff-capture.json; do
+    if [ -f "$har" ] && command -v jq >/dev/null 2>&1; then
+      jq 'del(.log.entries[].response.content.text)' "$har" > "${har}.stripped" 2>/dev/null && mv "${har}.stripped" "$har" || rm -f "${har}.stripped"
+    fi
+  done
+  cp -r "$DISCOVERY_DIR" "$PRESS_MANUSCRIPTS/<api>/$RUN_ID/discovery" 2>/dev/null || true
+fi
 ```
 
 ### Check for existing PR

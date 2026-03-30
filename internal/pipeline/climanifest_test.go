@@ -382,6 +382,73 @@ func TestWriteManifestForGenerateNoSpec(t *testing.T) {
 	assert.Empty(t, got.SpecChecksum)
 }
 
+func TestArchiveRunArtifactsCopiesDiscovery(t *testing.T) {
+	home := setPressTestEnv(t)
+
+	workingDir := filepath.Join(home, "working", "disc-test-pp-cli")
+	require.NoError(t, os.MkdirAll(workingDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "main.go"),
+		[]byte("package main\nfunc main() {}"), 0o644))
+
+	state := NewState("disc-test", workingDir)
+	require.NoError(t, os.MkdirAll(filepath.Dir(state.StatePath()), 0o755))
+	require.NoError(t, state.Save())
+
+	// Create research, proofs, and discovery dirs with test content
+	require.NoError(t, os.MkdirAll(state.ResearchDir(), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(state.ResearchDir(), "brief.md"), []byte("brief"), 0o644))
+
+	require.NoError(t, os.MkdirAll(state.DiscoveryDir(), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(state.DiscoveryDir(), "sniff-report.md"), []byte("report"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(state.DiscoveryDir(), "sniff-unique-paths.txt"), []byte("/api/v1\n/api/v2"), 0o644))
+
+	archiveDir, err := ArchiveRunArtifacts(state)
+	require.NoError(t, err)
+	assert.DirExists(t, archiveDir)
+
+	// Verify discovery/ was copied
+	archivedDiscovery := ArchivedDiscoveryDir(state.APIName, state.RunID)
+	assert.DirExists(t, archivedDiscovery)
+	report, err := os.ReadFile(filepath.Join(archivedDiscovery, "sniff-report.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "report", string(report))
+	paths, err := os.ReadFile(filepath.Join(archivedDiscovery, "sniff-unique-paths.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "/api/v1\n/api/v2", string(paths))
+
+	// Verify research/ was also copied
+	assert.DirExists(t, ArchivedResearchDir(state.APIName, state.RunID))
+}
+
+func TestArchiveRunArtifactsSkipsMissingDiscovery(t *testing.T) {
+	home := setPressTestEnv(t)
+
+	workingDir := filepath.Join(home, "working", "no-disc-pp-cli")
+	require.NoError(t, os.MkdirAll(workingDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "main.go"),
+		[]byte("package main\nfunc main() {}"), 0o644))
+
+	state := NewState("no-disc", workingDir)
+	require.NoError(t, os.MkdirAll(filepath.Dir(state.StatePath()), 0o755))
+	require.NoError(t, state.Save())
+
+	// Create only research/, no discovery/
+	require.NoError(t, os.MkdirAll(state.ResearchDir(), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(state.ResearchDir(), "brief.md"), []byte("brief"), 0o644))
+
+	archiveDir, err := ArchiveRunArtifacts(state)
+	require.NoError(t, err)
+	assert.DirExists(t, archiveDir)
+
+	// Verify discovery/ was NOT created (silently skipped)
+	archivedDiscovery := ArchivedDiscoveryDir(state.APIName, state.RunID)
+	_, err = os.Stat(archivedDiscovery)
+	assert.True(t, os.IsNotExist(err), "discovery/ should not exist when source is absent")
+
+	// Research should still be archived
+	assert.DirExists(t, ArchivedResearchDir(state.APIName, state.RunID))
+}
+
 func TestDetectSpecFormat(t *testing.T) {
 	tests := []struct {
 		name     string

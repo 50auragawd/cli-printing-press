@@ -566,6 +566,10 @@ func (s *PipelineState) ProofsDir() string {
 	return RunProofsDir(s.RunID)
 }
 
+func (s *PipelineState) DiscoveryDir() string {
+	return RunDiscoveryDir(s.RunID)
+}
+
 func (s *PipelineState) ManifestPath() string {
 	return RunManifestPath(s.RunID)
 }

@@ -61,12 +61,14 @@ Use a checkout-scoped runstate derived from the current git root for active work
         research/
         proofs/
         pipeline/
+        discovery/      (optional — sniff/crowd-sniff captures, reports, URL lists)
   library/
     <api>-pp-cli[-N]/
   manuscripts/<api>/<run-id>/
     research/
     proofs/
     pipeline/
+    discovery/          (optional — only for sniff/crowd-sniff derived CLIs)
     manifest.json
 ```
 
@@ -103,6 +105,7 @@ Artifact placement rules:
 - Archived research documents go under `manuscripts/<api>/<run-id>/research/`
 - Archived scorecard, dogfood, emboss, and similar evidence go under `manuscripts/<api>/<run-id>/proofs/`
 - Archived phase seeds and pipeline records go under `manuscripts/<api>/<run-id>/pipeline/`
+- Archived sniff/crowd-sniff discovery evidence goes under `manuscripts/<api>/<run-id>/discovery/` (optional — absent when no discovery method ran)
 - Resume and current-run discovery should read `.runstate` first, not global `library/` or `manuscripts/`
 
 ## Why This Works
@@ -122,7 +125,7 @@ That removes the class of bugs where docs say one thing, skills do another, and 
 ## Prevention
 
 - Never hardcode `~/cli-printing-press` in skills, docs, or code paths. Always resolve `git rev-parse --show-toplevel` first.
-- When adding a new artifact-producing phase, decide first whether it belongs in runstate `research/`, `proofs/`, or `pipeline/`, and whether it must also be archived at publish time. Do not default to repo `docs/plans/`.
+- When adding a new artifact-producing phase, decide first whether it belongs in runstate `research/`, `proofs/`, `pipeline/`, or `discovery/`, and whether it must also be archived at publish time. Do not default to repo `docs/plans/`.
 - If a feature writes a file tied to a generated CLI, test both canonical and claimed output dirs, for example `notion-pp-cli` and `notion-pp-cli-2`.
 - Keep naming logic centralized in `internal/naming/` and path logic centralized in `internal/pipeline/paths.go`.
 - Add tests whenever code infers API names or command directories from filesystem paths.

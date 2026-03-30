@@ -134,6 +134,7 @@ func ArchiveRunArtifacts(state *PipelineState) (string, error) {
 		{src: state.ResearchDir(), dst: ArchivedResearchDir(state.APIName, state.RunID)},
 		{src: state.ProofsDir(), dst: ArchivedProofsDir(state.APIName, state.RunID)},
 		{src: state.PipelineDir(), dst: ArchivedPipelineDir(state.APIName, state.RunID)},
+		{src: state.DiscoveryDir(), dst: ArchivedDiscoveryDir(state.APIName, state.RunID)},
 	}
 
 	for _, item := range pairs {

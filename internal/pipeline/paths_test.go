@@ -21,8 +21,10 @@ func TestWorkspacePathsUseScopedPressHome(t *testing.T) {
 	assert.Equal(t, filepath.Join(home, ".runstate", "atlanta-v1-deadbeef", "runs", "run-123", "research"), RunResearchDir("run-123"))
 	assert.Equal(t, filepath.Join(home, ".runstate", "atlanta-v1-deadbeef", "runs", "run-123", "proofs"), RunProofsDir("run-123"))
 	assert.Equal(t, filepath.Join(home, ".runstate", "atlanta-v1-deadbeef", "runs", "run-123", "pipeline"), RunPipelineDir("run-123"))
+	assert.Equal(t, filepath.Join(home, ".runstate", "atlanta-v1-deadbeef", "runs", "run-123", "discovery"), RunDiscoveryDir("run-123"))
 	assert.Equal(t, filepath.Join(home, "library"), PublishedLibraryRoot())
 	assert.Equal(t, filepath.Join(home, "manuscripts", "notion", "run-123"), ArchivedManuscriptDir("notion", "run-123"))
+	assert.Equal(t, filepath.Join(home, "manuscripts", "notion", "run-123", "discovery"), ArchivedDiscoveryDir("notion", "run-123"))
 	assert.Equal(t, filepath.Join(home, "workspaces", "atlanta-v1-deadbeef", "manuscripts", "notion", "research"), ResearchDir("notion"))
 	assert.Equal(t, filepath.Join(home, "workspaces", "atlanta-v1-deadbeef", "manuscripts", "notion", "proofs"), ProofsDir("notion"))
 }
