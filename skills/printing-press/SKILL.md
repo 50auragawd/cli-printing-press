@@ -440,7 +440,7 @@ Check which browser automation tools are available:
 
 ```bash
 # Prefer browser-use (CLI-driven, Performance API collection)
-if command -v browser-use >/dev/null 2>&1 || uvx browser-use --version >/dev/null 2>&1; then
+if command -v browser-use >/dev/null 2>&1 || uvx browser-use --help >/dev/null 2>&1; then
   SNIFF_BACKEND="browser-use"
 # Fall back to agent-browser (CLI-driven, Claude drives the loop)
 elif command -v agent-browser >/dev/null 2>&1; then
@@ -456,7 +456,7 @@ if [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || [ -n "$BROWSER_USE
 fi
 ```
 
-If a tool is found, report: "Using **<tool>** for traffic capture (CLI-driven mode — no LLM key needed)." and proceed to Step 2.
+If a tool is found, report: "Using **<tool>** for traffic capture (CLI-driven mode — no LLM key needed)." and proceed to Step 1c to verify compatibility.
 
 **Important:** browser-use has two modes: autonomous Agent mode (requires an LLM API key like ANTHROPIC_API_KEY) and CLI mode (open/eval/scroll — no key needed). **Always use CLI mode for sniff.** It is more reliable, version-stable, and does not require the user to provide an additional API key. Do NOT attempt to use browser-use's Python `Agent` class — it requires an LLM key that may not be available.
 
@@ -485,7 +485,7 @@ else
 fi
 ```
 
-After install, re-run detection. If `browser-use` is now available, set `SNIFF_BACKEND="browser-use"` and proceed to Step 2a. If install failed, show the error and offer agent-browser as alternative or fall back to manual HAR.
+After install, re-run detection. If `browser-use` is now available, set `SNIFF_BACKEND="browser-use"` and proceed to Step 1c. If install failed, show the error and offer agent-browser as alternative or fall back to manual HAR.
 
 **If user picks agent-browser:**
 
@@ -501,9 +501,59 @@ else
 fi
 ```
 
-After install, re-run detection. If `agent-browser` is now available, set `SNIFF_BACKEND="agent-browser"` and proceed to Step 2b. If install failed, show the error and fall back to manual HAR.
+After install, re-run detection. If `agent-browser` is now available, set `SNIFF_BACKEND="agent-browser"` and proceed to Step 1c. If install failed, show the error and fall back to manual HAR.
 
 **If user picks manual HAR**, ask the user for a HAR file path and skip to Step 3.
+
+#### Step 1c: Verify capture tool compatibility
+
+After detection (Step 1) or installation (Step 1b), verify the installed version supports the CLI commands the sniff process needs.
+
+**For browser-use** — The CLI 2.0 commands (`open`, `eval`, `scroll`, `close`) all shipped in **v0.12.3**. Versions before that have an incomplete or experimental CLI that won't work for sniff.
+
+```bash
+# browser-use has no --version flag; get version from pip metadata
+BROWSER_USE_VERSION=$(pip show browser-use 2>/dev/null | grep -i '^Version:' | awk '{print $2}')
+MIN_BROWSER_USE="0.12.3"
+
+# Compare versions (lexicographic sort works for dotted semver)
+if printf '%s\n' "$MIN_BROWSER_USE" "$BROWSER_USE_VERSION" | sort -V | head -1 | grep -qx "$MIN_BROWSER_USE"; then
+  BROWSER_USE_COMPAT=true
+else
+  BROWSER_USE_COMPAT=false
+fi
+```
+
+**For agent-browser** — check that the `network` subcommand exists (needed for HAR capture):
+
+```bash
+AGENT_BROWSER_VERSION=$(agent-browser --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if agent-browser network --help >/dev/null 2>&1; then
+  AGENT_BROWSER_COMPAT=true
+else
+  AGENT_BROWSER_COMPAT=false
+fi
+```
+
+**If the selected tool fails the compatibility check**, offer to upgrade via `AskUserQuestion`:
+
+> "Found **<tool>** v<version>, but sniff requires v<min-version>+ for CLI capture commands. Would you like to upgrade?"
+>
+> Options:
+> 1. **Yes — upgrade <tool>** — runs the appropriate upgrade command (see below)
+> 2. **Try <other-tool> instead** — switch to the other backend (install it if needed)
+> 3. **Skip — I'll provide a HAR manually**
+
+**Upgrade commands:**
+
+- **browser-use**: `uv pip install --upgrade browser-use` (if `uv` available) or `pip install --upgrade browser-use`
+- **agent-browser**: `brew upgrade agent-browser` (if brew-installed) or `npm update -g agent-browser`
+
+After upgrade, re-check the version. If the upgrade resolves the issue, proceed to Step 2. If it doesn't, offer the next fallback (other tool or manual HAR).
+
+**Do NOT upgrade automatically.** Always ask permission first — upgrading packages can have side effects on the user's environment.
+
+If the tool passes the version check, proceed to Step 2a (browser-use) or Step 2b (agent-browser).
 
 #### Step 2a: browser-use CLI capture (preferred)
 
