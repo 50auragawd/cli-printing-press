@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"sort"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -153,20 +154,36 @@ func (g *Generator) buildSyncResources() []SyncResource {
 			continue
 		}
 
-		// Find the list endpoint: a GET endpoint with Pagination != nil
-		for _, endpoint := range resource.Endpoints {
-			if strings.ToUpper(endpoint.Method) != "GET" || endpoint.Pagination == nil {
+		// Find the list endpoint: prefer "list" by name, otherwise first GET with Pagination.
+		// Sort keys for deterministic selection across builds.
+		var endpointNames []string
+		for epName := range resource.Endpoints {
+			endpointNames = append(endpointNames, epName)
+		}
+		sort.Strings(endpointNames)
+
+		var bestEndpoint *spec.Endpoint
+		for _, epName := range endpointNames {
+			ep := resource.Endpoints[epName]
+			if strings.ToUpper(ep.Method) != "GET" || ep.Pagination == nil {
 				continue
 			}
-
-			sr.Path = endpoint.Path
-			sr.PaginationType = endpoint.Pagination.Type
-			sr.LimitParam = endpoint.Pagination.LimitParam
-			sr.CursorParam = endpoint.Pagination.CursorParam
-			sr.NextCursorPath = endpoint.Pagination.NextCursorPath
-			sr.HasMoreField = endpoint.Pagination.HasMoreField
-			sr.ResponsePath = endpoint.ResponsePath
-			break
+			if epName == "list" {
+				bestEndpoint = &ep
+				break
+			}
+			if bestEndpoint == nil {
+				bestEndpoint = &ep
+			}
+		}
+		if bestEndpoint != nil {
+			sr.Path = bestEndpoint.Path
+			sr.PaginationType = bestEndpoint.Pagination.Type
+			sr.LimitParam = bestEndpoint.Pagination.LimitParam
+			sr.CursorParam = bestEndpoint.Pagination.CursorParam
+			sr.NextCursorPath = bestEndpoint.Pagination.NextCursorPath
+			sr.HasMoreField = bestEndpoint.Pagination.HasMoreField
+			sr.ResponsePath = bestEndpoint.ResponsePath
 		}
 
 		result = append(result, sr)

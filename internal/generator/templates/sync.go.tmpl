@@ -292,8 +292,9 @@ func syncResource(c interface {
 			break
 		}
 
-		// Batch upsert all items from this page
-		if err := db.UpsertBatch(resource, items); err != nil {
+		// Batch upsert all items from this page — dispatch to entity-specific
+		// batch methods when available, fall back to generic UpsertBatch.
+		if err := upsertBatchForResource(db, resource, items); err != nil {
 			if !humanFriendly {
 				fmt.Fprintf(os.Stderr, `{"event":"sync_error","resource":"%s","error":"%s"}`+"\n", resource, strings.ReplaceAll(err.Error(), `"`, `\"`))
 			}
@@ -338,12 +339,14 @@ func syncResource(c interface {
 		morePages := false
 		switch cfg.paginationType {
 		case "offset":
-			if len(items) >= cfg.defaultLimit && hasMore {
+			// Offset APIs: more pages when we got a full page. hasMore is unreliable
+			// (no cursor, often no has_more field).
+			if len(items) >= cfg.defaultLimit {
 				offset += len(items)
 				morePages = true
 			}
 		default:
-			// cursor / page_token
+			// cursor / page_token: need both a non-empty cursor and indication of more
 			if hasMore && len(items) >= cfg.defaultLimit && nextCursor != "" {
 				cursor = nextCursor
 				morePages = true
@@ -480,6 +483,22 @@ func extractPaginationFromEnvelope(envelope map[string]json.RawMessage, cursorPa
 	}
 
 	return nextCursor, hasMore
+}
+
+// upsertBatchForResource dispatches to entity-specific batch methods when available,
+// falling back to the generic UpsertBatch for unknown resource types.
+func upsertBatchForResource(db *store.Store, resource string, items []json.RawMessage) error {
+	switch resource {
+{{- range .Tables}}
+{{- if and (ge .Gravity 6) (gt (len .Columns) 3) (ne .Name "sync_state")}}
+	case "{{.Name}}":
+		_, err := db.UpsertBatch{{pascal .Name}}(items)
+		return err
+{{- end}}
+{{- end}}
+	default:
+		return db.UpsertBatch(resource, items)
+	}
 }
 
 // upsertSingleObject stores a non-array API response as a single record.
