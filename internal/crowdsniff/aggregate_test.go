@@ -153,6 +153,163 @@ func TestAggregate(t *testing.T) {
 		assert.Empty(t, baseURLs)
 	})
 
+	t.Run("union merge params from two sources", func(t *testing.T) {
+		t.Parallel()
+		results := []SourceResult{
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/v1/users", SourceTier: TierOfficialSDK, SourceName: "sdk",
+						Params: []DiscoveredParam{
+							{Name: "steamid", Type: "string", Required: true},
+						},
+					},
+				},
+			},
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/v1/users", SourceTier: TierCodeSearch, SourceName: "github",
+						Params: []DiscoveredParam{
+							{Name: "steamid", Type: "string"},
+							{Name: "count", Type: "integer"},
+						},
+					},
+				},
+			},
+		}
+
+		aggregated, _ := Aggregate(results)
+		assert.Len(t, aggregated, 1)
+		assert.Len(t, aggregated[0].Params, 2)
+		// Sorted alphabetically
+		assert.Equal(t, "count", aggregated[0].Params[0].Name)
+		assert.Equal(t, "steamid", aggregated[0].Params[1].Name)
+		// steamid from official-sdk (higher tier) wins
+		assert.True(t, aggregated[0].Params[1].Required)
+	})
+
+	t.Run("higher tier param wins on conflict", func(t *testing.T) {
+		t.Parallel()
+		results := []SourceResult{
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/users", SourceTier: TierOfficialSDK, SourceName: "sdk",
+						Params: []DiscoveredParam{
+							{Name: "limit", Type: "string"},
+						},
+					},
+				},
+			},
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/users", SourceTier: TierCodeSearch, SourceName: "github",
+						Params: []DiscoveredParam{
+							{Name: "limit", Type: "integer"},
+						},
+					},
+				},
+			},
+		}
+
+		aggregated, _ := Aggregate(results)
+		assert.Len(t, aggregated[0].Params, 1)
+		assert.Equal(t, "string", aggregated[0].Params[0].Type) // official-sdk wins
+	})
+
+	t.Run("one source has params other does not", func(t *testing.T) {
+		t.Parallel()
+		results := []SourceResult{
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{Method: "GET", Path: "/users", SourceTier: TierOfficialSDK, SourceName: "sdk"},
+				},
+			},
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/users", SourceTier: TierCodeSearch, SourceName: "github",
+						Params: []DiscoveredParam{
+							{Name: "page", Type: "integer"},
+						},
+					},
+				},
+			},
+		}
+
+		aggregated, _ := Aggregate(results)
+		assert.Len(t, aggregated[0].Params, 1)
+		assert.Equal(t, "page", aggregated[0].Params[0].Name)
+	})
+
+	t.Run("params sorted alphabetically", func(t *testing.T) {
+		t.Parallel()
+		results := []SourceResult{
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/users", SourceTier: TierCodeSearch, SourceName: "github",
+						Params: []DiscoveredParam{
+							{Name: "zebra", Type: "string"},
+							{Name: "alpha", Type: "string"},
+							{Name: "mid", Type: "string"},
+						},
+					},
+				},
+			},
+		}
+
+		aggregated, _ := Aggregate(results)
+		assert.Equal(t, "alpha", aggregated[0].Params[0].Name)
+		assert.Equal(t, "mid", aggregated[0].Params[1].Name)
+		assert.Equal(t, "zebra", aggregated[0].Params[2].Name)
+	})
+
+	t.Run("same tier same param first seen wins", func(t *testing.T) {
+		t.Parallel()
+		results := []SourceResult{
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/users", SourceTier: TierCodeSearch, SourceName: "github1",
+						Params: []DiscoveredParam{
+							{Name: "limit", Type: "string"},
+						},
+					},
+				},
+			},
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{
+						Method: "GET", Path: "/users", SourceTier: TierCodeSearch, SourceName: "github2",
+						Params: []DiscoveredParam{
+							{Name: "limit", Type: "integer"},
+						},
+					},
+				},
+			},
+		}
+
+		aggregated, _ := Aggregate(results)
+		assert.Equal(t, "string", aggregated[0].Params[0].Type) // first seen wins
+	})
+
+	t.Run("no params from any source yields nil", func(t *testing.T) {
+		t.Parallel()
+		results := []SourceResult{
+			{
+				Endpoints: []DiscoveredEndpoint{
+					{Method: "GET", Path: "/users", SourceTier: TierCodeSearch, SourceName: "github"},
+				},
+			},
+		}
+
+		aggregated, _ := Aggregate(results)
+		assert.Nil(t, aggregated[0].Params)
+	})
+
 	t.Run("base URL candidates deduplicated", func(t *testing.T) {
 		t.Parallel()
 		results := []SourceResult{

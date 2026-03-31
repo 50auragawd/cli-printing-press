@@ -8,12 +8,21 @@ const (
 	TierPostman      = "postman"
 )
 
+// DiscoveredParam represents a query parameter extracted from SDK source code.
+type DiscoveredParam struct {
+	Name     string // parameter name (e.g., "steamid", "include_appinfo")
+	Type     string // inferred type: "string", "integer", "boolean"
+	Required bool   // true if positional arg without default in function signature
+	Default  string // default value as string, empty if none
+}
+
 // DiscoveredEndpoint represents a single API endpoint found by a source.
 type DiscoveredEndpoint struct {
-	Method     string // HTTP method (GET, POST, etc.)
-	Path       string // URL path (e.g., "/v1/users", "/users/:id")
-	SourceTier string // one of the Tier* constants
-	SourceName string // e.g., "@notionhq/client", "github-code-search"
+	Method     string            // HTTP method (GET, POST, etc.)
+	Path       string            // URL path (e.g., "/v1/users", "/users/:id")
+	Params     []DiscoveredParam // query parameters extracted from SDK code
+	SourceTier string            // one of the Tier* constants
+	SourceName string            // e.g., "@notionhq/client", "github-code-search"
 }
 
 // SourceResult is returned by each discovery source.
@@ -25,7 +34,8 @@ type SourceResult struct {
 // AggregatedEndpoint is a deduplicated endpoint with cross-source metadata.
 type AggregatedEndpoint struct {
 	Method      string
-	Path        string // normalized
-	SourceTier  string // highest tier across sources
-	SourceCount int    // number of distinct sources
+	Path        string            // normalized
+	Params      []DiscoveredParam // union-merged params across sources, sorted by name
+	SourceTier  string            // highest tier across sources
+	SourceCount int               // number of distinct sources
 }
