@@ -93,7 +93,25 @@ func TestPrintingPressSkillUsesRunRootStateFile(t *testing.T) {
 
 	assert.Contains(t, skill, `STATE_FILE="$API_RUN_DIR/state.json"`)
 	assert.NotContains(t, skill, `STATE_FILE="$PIPELINE_DIR/state.json"`)
-	assert.Contains(t, skill, `"working_dir": "<absolute cli dir>"`)
+	assert.Contains(t, skill, `"working_dir": "$CLI_WORK_DIR"`)
+}
+
+func TestPrintingPressSkillUsesRunstateForBuilds(t *testing.T) {
+	skill := readContractFile(t, filepath.Join("..", "..", "skills", "printing-press", "SKILL.md"))
+
+	// Phase 2-5 should use $CLI_WORK_DIR, not $PRESS_LIBRARY/<api>-pp-cli for --output.
+	assert.Contains(t, skill, `CLI_WORK_DIR="$API_RUN_DIR/working/<api>-pp-cli"`)
+	assert.Contains(t, skill, `--output "$CLI_WORK_DIR"`)
+	assert.NotContains(t, skill, `--output "$PRESS_LIBRARY/<api>-pp-cli"`)
+
+	// Lock acquire should appear before generation.
+	assert.Contains(t, skill, `printing-press lock acquire --cli <api>-pp-cli --scope "$PRESS_SCOPE"`)
+
+	// Lock promote should appear in Phase 5.5.
+	assert.Contains(t, skill, `printing-press lock promote --cli <api>-pp-cli --dir "$CLI_WORK_DIR"`)
+
+	// Phase 6 should still reference $PRESS_LIBRARY (reads from promoted location).
+	assert.Contains(t, skill, `$PRESS_LIBRARY/<api>-pp-cli`)
 }
 
 func TestPrintingPressSkillExamplesUseCurrentCLINaming(t *testing.T) {
