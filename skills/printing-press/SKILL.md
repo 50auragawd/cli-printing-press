@@ -1515,7 +1515,11 @@ if [ -d "$DISCOVERY_DIR" ]; then
 fi
 ```
 
+**MANDATORY: After archiving, you MUST proceed to Phase 6 (Publish) below. Do not print a summary and stop. Do not treat archiving as the end of the run. The run ends when the user has been asked about publishing (or the verdict is `hold`).**
+
 ## Phase 6: Publish
+
+**This phase is NOT optional.** Every run with a `ship` or `ship-with-gaps` verdict MUST reach this point. Do not skip it.
 
 After archiving, offer to publish the CLI to the library repo.
 
