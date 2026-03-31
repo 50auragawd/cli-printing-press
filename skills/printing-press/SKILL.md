@@ -147,13 +147,8 @@ PRESS_MANUSCRIPTS="$PRESS_HOME/manuscripts"
 PRESS_CURRENT="$PRESS_RUNSTATE/current"
 
 mkdir -p "$PRESS_RUNSTATE" "$PRESS_LIBRARY" "$PRESS_MANUSCRIPTS" "$PRESS_CURRENT"
-```
-<!-- PRESS_SETUP_CONTRACT_END -->
 
-### Codex Mode Detection
-
-<!-- CODEX_DETECTION_START -->
-```bash
+# --- Codex mode detection (must run as part of setup, not a separate step) ---
 # Codex mode: opt-in only. User must pass "codex" or "--codex" to enable.
 if echo "$ARGUMENTS" | grep -qiE '(^| )(--?codex|codex)( |$)'; then
   CODEX_MODE=true
@@ -174,7 +169,7 @@ if [ "$CODEX_MODE" = "true" ]; then
     CODEX_MODEL=$(codex config get model 2>/dev/null || echo "gpt-5.4")
     echo "Codex mode enabled (model: $CODEX_MODEL). Code-writing tasks will be delegated to Codex."
   else
-    echo "Codex CLI not found — running in standard mode."
+    echo "Codex CLI not found - running in standard mode."
     CODEX_MODE=false
   fi
 fi
@@ -182,7 +177,7 @@ fi
 # Circuit breaker state
 CODEX_CONSECUTIVE_FAILURES=0
 ```
-<!-- CODEX_DETECTION_END -->
+<!-- PRESS_SETUP_CONTRACT_END -->
 
 After running the setup contract, check binary version compatibility. Read the `min-binary-version` field from this skill's YAML frontmatter. Run `printing-press version --json` and parse the version from the output. Compare it to `min-binary-version` using semver rules. If the installed binary is older than the minimum, warn the user: "printing-press binary vX.Y.Z is older than the minimum required vA.B.C. Run `go install github.com/mvanhorn/cli-printing-press/cmd/printing-press@latest` to update." Continue anyway but surface the warning prominently.
 
