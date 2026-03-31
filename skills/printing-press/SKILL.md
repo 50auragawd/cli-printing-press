@@ -2,7 +2,7 @@
 name: printing-press
 description: Generate a ship-ready CLI for an API with a lean research -> generate -> build -> shipcheck loop.
 version: 2.0.0
-min-binary-version: "0.2.0"
+min-binary-version: "0.3.0"
 allowed-tools:
   - Bash
   - Read
@@ -193,7 +193,7 @@ Before doing anything else:
 
 <!-- PRESS_SETUP_CONTRACT_START -->
 ```bash
-# min-binary-version: 0.2.0
+# min-binary-version: 0.3.0
 if ! command -v printing-press >/dev/null 2>&1; then
   if [ -x "$HOME/go/bin/printing-press" ]; then
     export PATH="$HOME/go/bin:$PATH"
@@ -269,9 +269,10 @@ RESEARCH_DIR="$API_RUN_DIR/research"
 PROOFS_DIR="$API_RUN_DIR/proofs"
 PIPELINE_DIR="$API_RUN_DIR/pipeline"
 DISCOVERY_DIR="$API_RUN_DIR/discovery"
+CLI_WORK_DIR="$API_RUN_DIR/working/<api>-pp-cli"
 STAMP="$(date +%Y-%m-%d-%H%M%S)"
 
-mkdir -p "$RESEARCH_DIR" "$PROOFS_DIR" "$PIPELINE_DIR"
+mkdir -p "$RESEARCH_DIR" "$PROOFS_DIR" "$PIPELINE_DIR" "$CLI_WORK_DIR"
 STATE_FILE="$API_RUN_DIR/state.json"
 ```
 
@@ -280,8 +281,8 @@ Maintain a lightweight state file at `$STATE_FILE` so `/printing-press-score` ca
 ```json
 {
   "api_name": "<api>",
-  "working_dir": "<absolute cli dir>",
-  "output_dir": "<absolute cli dir>",
+  "working_dir": "$CLI_WORK_DIR",
+  "output_dir": "$CLI_WORK_DIR",
   "spec_path": "<absolute spec path if known>"
 }
 ```
@@ -347,11 +348,29 @@ Before new research:
    - `$PRESS_MANUSCRIPTS/<cli-name>/*/research/*` (also check `$PRESS_MANUSCRIPTS/<api>/*/research/*` for backwards compatibility)
    - `$REPO_ROOT/docs/plans/*<api>*` (legacy fallback)
 3. Reuse good prior work instead of redoing it.
-4. **Library Check** — Check if a CLI for this API already exists in the library and present the user with context and options.
+4. **Library Check** — Check if a CLI for this API already exists in the library or is actively being built, and present the user with context and options.
+
+   First, check lock status to detect active builds:
+
+   ```bash
+   LOCK_STATUS=$(printing-press lock status --cli <api>-pp-cli --json 2>/dev/null)
+   LOCK_HELD=$(echo "$LOCK_STATUS" | grep -o '"held"[[:space:]]*:[[:space:]]*[a-z]*' | head -1 | sed 's/.*: *//')
+   LOCK_STALE=$(echo "$LOCK_STATUS" | grep -o '"stale"[[:space:]]*:[[:space:]]*[a-z]*' | head -1 | sed 's/.*: *//')
+   LOCK_PHASE=$(echo "$LOCK_STATUS" | grep -o '"phase"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"phase"[[:space:]]*:[[:space:]]*"//;s/"//')
+   LOCK_AGE=$(echo "$LOCK_STATUS" | grep -o '"age_seconds"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | sed 's/.*: *//')
+   ```
+
+   Then check the library directory:
 
    ```bash
    CLI_DIR="$PRESS_LIBRARY/<api>-pp-cli"
+   HAS_LIBRARY=false
+   HAS_GOMOD=false
    if [ -d "$CLI_DIR" ]; then
+     HAS_LIBRARY=true
+     if [ -f "$CLI_DIR/go.mod" ]; then
+       HAS_GOMOD=true
+     fi
      # Read manifest if available
      MANIFEST="$CLI_DIR/.printing-press.json"
      if [ -f "$MANIFEST" ]; then
@@ -363,7 +382,23 @@ Before new research:
    fi
    ```
 
-   If the directory exists, display context and present options using `AskUserQuestion`:
+   **Decision matrix:**
+
+   | Library dir? | Lock? | Stale? | Has go.mod? | Action |
+   |-------------|-------|--------|-------------|--------|
+   | No | No | N/A | N/A | Proceed normally |
+   | No | Yes | No | N/A | Warn: "Actively being built (phase: `<phase>`, `<age>` seconds ago). Wait, use a different name, or pick a different API." |
+   | No | Yes | Yes | N/A | Offer reclaim: "Interrupted build detected (stale since `<age>`s ago). Reclaim and start fresh?" |
+   | Yes | No | N/A | Yes | Existing "Found existing" flow (see below) |
+   | Yes | No | N/A | No | Debris: "Found `<cli-name>` directory in library but it appears incomplete (no go.mod). Clean up and start fresh?" If user approves, `rm -rf "$CLI_DIR"` and proceed normally. |
+   | Yes | Yes | No | Any | Warn: "Actively being rebuilt (phase: `<phase>`, `<age>` seconds ago). Wait, use a different name, or pick a different API." |
+   | Yes | Yes | Yes | Any | Offer reclaim: "Interrupted rebuild detected (stale since `<age>`s ago). Reclaim and start fresh?" |
+
+   **If actively locked (not stale):** Present via `AskUserQuestion` with options to wait, pick a different API, or force-reclaim (`printing-press lock acquire --cli <api>-pp-cli --scope "$PRESS_SCOPE" --force`).
+
+   **If stale lock:** Reclaiming is automatic on `lock acquire` in Phase 2. If user approves, proceed normally — the lock acquire in Phase 2 will auto-reclaim the stale lock.
+
+   **If library exists with go.mod and no lock (completed CLI):** Display context and present options using `AskUserQuestion`:
 
    > Found existing `<cli-name>` in library (last modified `<date>`).
 
@@ -372,7 +407,7 @@ Before new research:
    If prior research was also found (step 2), include the research summary alongside the library info.
 
    Then ask:
-   1. **"Generate a fresh CLI"** — Re-runs the generator into the same directory (`--force`), overwrites generated code, then rebuilds transcendence features. Prior research is reused if recent. ~15-20 min.
+   1. **"Generate a fresh CLI"** — Re-runs the generator into a working directory, overwrites generated code, then rebuilds transcendence features. Prior research is reused if recent. ~15-20 min.
    2. **"Improve existing CLI"** — Keeps all current code, audits for quality gaps, implements top improvements. The generator is not re-run. ~10 min.
    3. **"Review prior research first"** — Show the full research brief and absorb manifest before deciding.
 
@@ -380,7 +415,7 @@ Before new research:
    If the user picks option 2, invoke `/printing-press-polish <cli-name>` to improve the existing CLI.
    If the user picks option 3, display the prior research, then re-present options 1 and 2.
 
-   If no CLI exists in the library, skip this step and proceed normally.
+   If no CLI exists in the library and no lock is active, skip this step and proceed normally.
 
 5. **API Key Gate** — Check whether this API requires authentication, then handle accordingly.
 
@@ -905,12 +940,20 @@ Proceed silently to Phase 2.
 
 Use the resolved spec source and generate immediately.
 
+Before running any generate command, acquire the build lock:
+
+```bash
+printing-press lock acquire --cli <api>-pp-cli --scope "$PRESS_SCOPE"
+```
+
+If acquire fails (another session holds a fresh lock), present the lock status to the user and let them decide: wait, use a different CLI name, force-reclaim, or pick a different API.
+
 OpenAPI / internal YAML:
 
 ```bash
 printing-press generate \
   --spec <spec-path-or-url> \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --force --lenient --validate
 ```
@@ -922,7 +965,7 @@ printing-press generate \
   --spec <original-spec-path-or-url> \
   --spec "$RESEARCH_DIR/<api>-sniff-spec.yaml" \
   --name <api> \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --spec-source sniffed \
   --force --lenient --validate
@@ -935,7 +978,7 @@ Sniff-only (no original spec, sniff was the primary source):
 ```bash
 printing-press generate \
   --spec "$RESEARCH_DIR/<api>-sniff-spec.yaml" \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --spec-source sniffed \
   --force --lenient --validate
@@ -950,7 +993,7 @@ printing-press generate \
   --spec <original-spec-path-or-url> \
   --spec "$RESEARCH_DIR/<api>-crowd-spec.yaml" \
   --name <api> \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --force --lenient --validate
 ```
@@ -960,7 +1003,7 @@ Crowd-sniff-only (no original spec, crowd sniff was the primary source):
 ```bash
 printing-press generate \
   --spec "$RESEARCH_DIR/<api>-crowd-spec.yaml" \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --force --lenient --validate
 ```
@@ -973,7 +1016,7 @@ printing-press generate \
   --spec "$RESEARCH_DIR/<api>-sniff-spec.yaml" \
   --spec "$RESEARCH_DIR/<api>-crowd-spec.yaml" \
   --name <api> \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --force --lenient --validate
 ```
@@ -984,7 +1027,7 @@ Docs-only:
 printing-press generate \
   --docs <docs-url> \
   --name <api> \
-  --output "$PRESS_LIBRARY/<api>-pp-cli" \
+  --output "$CLI_WORK_DIR" \
   --research-dir "$API_RUN_DIR" \
   --force --validate
 ```
@@ -998,7 +1041,7 @@ After generation:
 **REQUIRED: Rewrite the CLI description.** The generator copies the spec's `description` field
 as the CLI's `Short` help text. Spec descriptions describe the *API* ("Payment processing API")
 but CLI help should describe what the *CLI does* ("Manage payments, subscriptions, and invoices
-via the Stripe API"). Open `$PRESS_LIBRARY/<api>-pp-cli/internal/cli/root.go`, find the
+via the Stripe API"). Open `$CLI_WORK_DIR/internal/cli/root.go`, find the
 `Short:` field on the root cobra command, and rewrite it as a concise, user-facing description
 of the CLI's purpose. Use the product thesis from the Phase 1 brief to inform the rewrite.
 
@@ -1016,6 +1059,12 @@ or auth method that the spec didn't declare, add the appropriate env var support
 and `os.Getenv("<API>_API_KEY")` in the Load function. The research brief is the
 authoritative source when the spec is silent on auth.
 
+After the description rewrite, update the lock heartbeat:
+
+```bash
+printing-press lock update --cli <api>-pp-cli --phase generate
+```
+
 Then:
 - note skipped complex body fields
 - fix only blocking generation failures here
@@ -1025,6 +1074,10 @@ If generation fails:
 - fix the specific blocker
 - retry at most 2 times
 - prefer generator fixes over manual generated-code surgery when the failure is systemic
+- if retries are exhausted, release the lock and stop:
+  ```bash
+  printing-press lock release --cli <api>-pp-cli
+  ```
 
 ## Phase 3: Build The GOAT
 
@@ -1041,6 +1094,11 @@ Priority 0 (foundation):
 - data layer for ALL primary entities from the manifest
 - sync/search/SQL path - this is what makes transcendence possible
 
+After completing Priority 0, update the lock heartbeat:
+```bash
+printing-press lock update --cli <api>-pp-cli --phase build-p0
+```
+
 Priority 1 (absorb - match everything):
 - ALL absorbed features from the Phase 1.5 manifest
 - Every feature from every competing tool, matched and beaten with agent-native output
@@ -1050,6 +1108,11 @@ Priority 2 (transcend - build what nobody else has):
 - ALL transcendence features from Phase 1.5
 - The NOI commands that only work because everything is in SQLite
 - These are the commands that make someone say "I need this"
+
+After completing Priority 2, update the lock heartbeat:
+```bash
+printing-press lock update --cli <api>-pp-cli --phase build-p2
+```
 
 Priority 3 (polish):
 - skipped complex request bodies that block important commands
@@ -1086,6 +1149,11 @@ Pick 3 random commands from Priority 1. Run each with:
 
 If any of the 3 fail, there's a systemic issue. Fix it across all commands before proceeding. This catches problems like "--dry-run not wired" or "--json outputs table instead of JSON" early, when they're cheap to fix.
 
+After passing the Priority 1 Review Gate, update the lock heartbeat:
+```bash
+printing-press lock update --cli <api>-pp-cli --phase build-p1
+```
+
 Get Priority 0 and 1 working first (the foundation and absorbed features), pass the review gate, then build Priority 2 (transcendence), then verify.
 
 Write:
@@ -1102,11 +1170,16 @@ Include:
 
 Run one combined verification block.
 
+Before running shipcheck, update the lock heartbeat:
 ```bash
-printing-press dogfood         --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec>
-printing-press verify          --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec> --fix
-printing-press workflow-verify --dir "$PRESS_LIBRARY/<api>-pp-cli"
-printing-press scorecard       --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec>
+printing-press lock update --cli <api>-pp-cli --phase shipcheck
+```
+
+```bash
+printing-press dogfood         --dir "$CLI_WORK_DIR" --spec <same-spec>
+printing-press verify          --dir "$CLI_WORK_DIR" --spec <same-spec> --fix
+printing-press workflow-verify --dir "$CLI_WORK_DIR"
+printing-press scorecard       --dir "$CLI_WORK_DIR" --spec <same-spec>
 ```
 
 Interpretation:
@@ -1150,6 +1223,12 @@ Include:
 - before/after scorecard total
 - final ship recommendation: `ship`, `ship-with-gaps`, or `hold`
 
+If the final verdict is `hold`, release the lock without promoting to library:
+```bash
+printing-press lock release --cli <api>-pp-cli
+```
+The working copy remains in `$CLI_WORK_DIR` for potential future retry. Proceed to Phase 5.5 to archive manuscripts (archiving still happens on hold).
+
 ## Phase 5: Optional Live Smoke
 
 Only run this if a token is available and the user agreed.
@@ -1167,10 +1246,25 @@ Write:
 
 `$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-live-smoke.md`
 
-## Phase 5.5: Archive Manuscripts
+## Phase 5.5: Promote and Archive
+
+### Promote to Library
+
+If the shipcheck verdict is `ship` or `ship-with-gaps`, promote the verified CLI from the working directory to the library. This must happen BEFORE archiving — the CLI in the library is the primary deliverable.
+
+```bash
+# Promote verified CLI to library (copies working dir, writes manifest, releases lock)
+printing-press lock promote --cli <api>-pp-cli --dir "$CLI_WORK_DIR"
+```
+
+The `promote` command handles the full sequence: clears old library contents if they exist, copies the working directory to `$PRESS_LIBRARY/<api>-pp-cli`, writes the `.printing-press.json` manifest, updates the `CurrentRunPointer`, and releases the lock — all in one step.
+
+If the shipcheck verdict is `hold`, the lock was already released in Phase 4. Do NOT promote. The working copy stays in `$CLI_WORK_DIR` and is not copied to the library.
+
+### Archive Manuscripts
 
 Archive the run's research, proofs, and discovery artifacts to `$PRESS_MANUSCRIPTS/`
-**unconditionally** after shipcheck completes (or after live smoke if it ran). This
+**unconditionally** after promotion (or after lock release for `hold` verdicts). This
 happens regardless of the shipcheck verdict — even a `hold` run produces research
 and proofs that future runs should be able to reuse.
 
