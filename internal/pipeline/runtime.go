@@ -119,32 +119,45 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 		classifyCommandKind(&commands[i], spec)
 	}
 
-	// 7. Run tests
-	for i, cmd := range commands {
+	// Collect auth env var names from the spec, falling back to the derived name.
+	authEnvVars := []string{envVarName}
+	if spec != nil && len(spec.Auth.EnvVars) > 0 {
+		authEnvVars = spec.Auth.EnvVars
+	}
+
+	// buildEnv constructs the environment for test subprocesses, passing
+	// all auth-related env vars so auth-requiring commands can complete.
+	buildEnv := func() []string {
 		env := os.Environ()
 		if report.Mode == "live" {
-			env = append(env, envVarName+"="+cfg.APIKey)
+			for _, ev := range authEnvVars {
+				if val := os.Getenv(ev); val != "" {
+					env = append(env, ev+"="+val)
+				}
+			}
+			// Also pass the explicit API key under the primary env var if provided.
+			if cfg.APIKey != "" {
+				env = append(env, envVarName+"="+cfg.APIKey)
+			}
 		} else {
 			env = append(env, baseURLEnvVar+"="+baseURLOverride)
-			env = append(env, envVarName+"=mock-token-for-testing")
+			for _, ev := range authEnvVars {
+				env = append(env, ev+"=mock-token-for-testing")
+			}
 		}
+		return env
+	}
 
+	// 7. Run tests
+	for i, cmd := range commands {
+		env := buildEnv()
 		result := runCommandTests(binaryPath, cmd, report.Mode, env)
 		commands[i] = cmd // preserve classification
 		report.Results = append(report.Results, result)
 	}
 
 	// 8. Data pipeline test
-	report.DataPipeline = runDataPipelineTest(binaryPath, report.Mode, func() []string {
-		env := os.Environ()
-		if report.Mode == "live" {
-			env = append(env, envVarName+"="+cfg.APIKey)
-		} else {
-			env = append(env, baseURLEnvVar+"="+baseURLOverride)
-			env = append(env, envVarName+"=mock-token-for-testing")
-		}
-		return env
-	})
+	report.DataPipeline = runDataPipelineTest(binaryPath, report.Mode, buildEnv)
 
 	// 9. Compute aggregate
 	for _, r := range report.Results {
