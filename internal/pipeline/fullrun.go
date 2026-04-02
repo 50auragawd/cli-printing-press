@@ -49,6 +49,10 @@ type FullRunResult struct {
 	VerificationError string
 	Remediation       *RemediationResult
 
+	// Step 5.6: Workflow Verification
+	WorkflowVerify      *WorkflowVerifyReport
+	WorkflowVerifyError string
+
 	// Step 5: Scorecard
 	Scorecard      *Scorecard
 	ScorecardError string
@@ -220,6 +224,15 @@ func MakeBestCLI(apiName, level, specFlag, specURL, outputDir, pressBinary strin
 				}
 			}
 		}
+	}
+
+	// Step 5.6: Workflow Verification
+	wfReport, wfErr := RunWorkflowVerification(workingDir)
+	if wfErr != nil {
+		result.WorkflowVerifyError = wfErr.Error()
+		result.Errors = append(result.Errors, fmt.Sprintf("workflow verification: %v", wfErr))
+	} else {
+		result.WorkflowVerify = wfReport
 	}
 
 	// Step 6: Scorecard
@@ -498,6 +511,14 @@ func PrintComparisonTable(results []*FullRunResult) string {
 		return summary
 	})
 
+	// Workflow Verification
+	writeRow(&b, "Workflow Verify", results, func(r *FullRunResult) string {
+		if r.WorkflowVerify == nil {
+			return "n/a"
+		}
+		return string(r.WorkflowVerify.Verdict)
+	})
+
 	// LLM Polish
 	writeRow(&b, "LLM Polish", results, func(r *FullRunResult) string {
 		if r.PolishResult == nil {
@@ -684,6 +705,20 @@ func GenerateLearningsPlan(results []*FullRunResult, outputPath string) error {
 				r.Verification.OrphanFTS)
 		} else {
 			fmt.Fprintf(&b, "- **%s** - not run (%s)\n", r.APIName, r.VerificationError)
+		}
+	}
+	b.WriteString("\n")
+
+	// Workflow Verification summary
+	b.WriteString("## Workflow Verification Summary\n\n")
+	for _, r := range results {
+		if r.WorkflowVerify != nil {
+			fmt.Fprintf(&b, "- **%s** - %s\n", r.APIName, r.WorkflowVerify.Verdict)
+			for _, issue := range r.WorkflowVerify.Issues {
+				fmt.Fprintf(&b, "  - %s\n", issue)
+			}
+		} else {
+			fmt.Fprintf(&b, "- **%s** - not run (%s)\n", r.APIName, r.WorkflowVerifyError)
 		}
 	}
 	b.WriteString("\n")

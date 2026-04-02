@@ -1103,14 +1103,16 @@ Include:
 Run one combined verification block.
 
 ```bash
-printing-press dogfood   --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec>
-printing-press verify    --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec> --fix
-printing-press scorecard --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec>
+printing-press dogfood         --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec>
+printing-press verify          --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec> --fix
+printing-press workflow-verify --dir "$PRESS_LIBRARY/<api>-pp-cli"
+printing-press scorecard       --dir "$PRESS_LIBRARY/<api>-pp-cli" --spec <same-spec>
 ```
 
 Interpretation:
-- `dogfood` catches dead flags, dead helpers, invalid paths, example drift, and broken data wiring
+- `dogfood` catches dead flags, dead helpers, invalid paths, example drift, broken data wiring, and command tree/config field wiring bugs
 - `verify` catches runtime breakage and runs the auto-fix loop for common failures
+- `workflow-verify` tests the primary workflow end-to-end using the verification manifest (workflow_verify.yaml). Three verdicts: workflow-pass, workflow-fail, unverified-needs-auth
 - `scorecard` is the structural quality snapshot, not the source of truth by itself
 
 Fix order:
@@ -1130,6 +1132,8 @@ When `CODEX_MODE` is false, fix bugs directly.
 Ship threshold:
 - `verify` verdict is `PASS` or high `WARN` with 0 critical failures
 - `dogfood` no longer fails because of spec parsing, binary path, or skipped examples
+- `dogfood` wiring checks pass (no unregistered commands, no config field mismatches)
+- `workflow-verify` verdict is `workflow-pass` or `unverified-needs-auth` (not `workflow-fail`)
 - `scorecard` is at least 65, or meaningfully improved and no core behavior is broken
 
 Maximum 2 shipcheck loops by default.

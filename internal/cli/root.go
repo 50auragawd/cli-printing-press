@@ -51,6 +51,7 @@ func Execute() error {
 	rootCmd.AddCommand(newLibraryCmd())
 	rootCmd.AddCommand(newPublishCmd())
 	rootCmd.AddCommand(newPolishCmd())
+	rootCmd.AddCommand(newWorkflowVerifyCmd())
 
 	return rootCmd.Execute()
 }
