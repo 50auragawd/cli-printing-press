@@ -90,6 +90,22 @@ See the `printing-press-polish` skill for details. It runs diagnostics, fixes ve
 - YAML, JSON, local paths, and URLs are all valid spec inputs for the verification tools.
 - Maximum 2 verification fix loops unless the user explicitly asks for more.
 
+## Secret & PII Protection (Cardinal Rules)
+
+**These rules are non-negotiable. They apply at ALL times during a run.**
+
+API key **values**, token **values**, passwords, and session cookies must NEVER
+appear in any artifact: source code, manuscripts, proofs, READMEs, HARs, or
+anything committed to git. Env var **names** (e.g., `STEAM_API_KEY`) and
+placeholders (e.g., `"your-key-here"`) are safe.
+
+During Phase 5.5 (archiving) and before publishing, read and apply
+[references/secret-protection.md](references/secret-protection.md) for:
+- Exact-value scanning and auto-redaction of artifacts
+- HAR auth stripping (headers, query strings, cookies)
+- API key handling rules during the run
+- Session state cleanup ordering
+
 ## Orientation & Briefing
 
 Before setup, check whether the user provided arguments. Handle two cases:

@@ -442,6 +442,50 @@ gh pr create \
 
 Display the PR URL prominently.
 
+## Secret & PII Protection
+
+Before creating the PR, verify that no secrets leaked into the packaged CLI.
+
+**This matters because the library repo is public.** A leaked API key in a PR is
+a security incident — anyone can see it, even if the PR is later closed.
+
+### What the machine checks (deterministic)
+
+The generation skill (`/printing-press`) runs an exact-value scan during Phase 5.5
+if the user provided an API key. By the time publish runs, the machine's own
+mistakes should already be caught. But the user may have edited files between
+generation and publish.
+
+### What publish checks (best-effort, warn-only)
+
+1. **If `gitleaks` or `trufflehog` is installed**, run it on the staged directory:
+   ```bash
+   if command -v gitleaks >/dev/null 2>&1; then
+     gitleaks detect --source "<staging-dir>/library" --no-git --verbose 2>&1
+   elif command -v trufflehog >/dev/null 2>&1; then
+     trufflehog filesystem "<staging-dir>/library" 2>&1
+   fi
+   ```
+   These tools use vendor-specific patterns (Steam keys, Stripe keys, GitHub
+   tokens) with low false-positive rates. Their findings are warnings — the
+   user reviews and decides.
+
+2. **If no scanning tool is installed**, do a lightweight check:
+   - Verify no `.env` files, `session-state.json`, or `config.toml` with
+     real credentials exist in the staged directory
+   - Check README examples use `"your-key-here"` placeholders, not real values
+   - Check manuscripts (if included) don't contain auth headers or cookie values
+
+3. **Never include** in the staged directory:
+   - `.env` files
+   - `session-state.json`
+   - Config files with real credentials
+   - HAR captures with un-stripped auth headers
+
+If any issues are found, warn the user and ask whether to proceed. The user
+makes the final call — they may have intentionally included something the scan
+flagged (e.g., a test fixture with a fake key). Don't block silently.
+
 ## Error Handling
 
 - **`gh` not authenticated:** Detect in Step 1, tell user to run `gh auth login`
