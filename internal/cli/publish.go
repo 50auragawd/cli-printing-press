@@ -233,7 +233,13 @@ func newPublishPackageCmd() *cobra.Command {
 			msRoot := pipeline.PublishedManuscriptsRoot()
 			msAPIDir := filepath.Join(msRoot, apiName)
 			runID, err := findMostRecentRun(msAPIDir)
-			if err == nil && runID != "" {
+			// Fallback: the generator may derive a different slug (e.g., "steam-web")
+			// than the skill used during archiving (e.g., "steam"). Try prefix/suffix
+			// variations and directory scanning when the exact name doesn't match.
+			if err != nil || runID == "" {
+				msAPIDir, runID = resolveManuscriptDir(msRoot, apiName)
+			}
+			if runID != "" {
 				result.RunID = runID
 				srcMsDir := filepath.Join(msAPIDir, runID)
 				dstMsDir := filepath.Join(stagingCLIDir, ".manuscripts", runID)
@@ -378,7 +384,12 @@ func runValidation(dir string) ValidateResult {
 	if apiName == "" {
 		apiName = naming.TrimCLISuffix(cliName)
 	}
-	msDir := filepath.Join(pipeline.PublishedManuscriptsRoot(), apiName)
+	msRoot := pipeline.PublishedManuscriptsRoot()
+	msDir := filepath.Join(msRoot, apiName)
+	if _, err := os.Stat(msDir); os.IsNotExist(err) {
+		// Fallback: try resolving alternate directory names
+		msDir, _ = resolveManuscriptDir(msRoot, apiName)
+	}
 	if _, err := os.Stat(msDir); os.IsNotExist(err) {
 		result.Checks = append(result.Checks, CheckResult{Name: "manuscripts", Passed: true, Warning: "no manuscripts found"})
 	} else {
@@ -563,6 +574,48 @@ func findMostRecentRun(msAPIDir string) (string, error) {
 	// Lexicographic sort (run-ids are timestamp-prefixed)
 	sort.Strings(runs)
 	return runs[len(runs)-1], nil
+}
+
+// resolveManuscriptDir attempts to find the manuscripts directory for an API
+// when the exact apiName doesn't match a directory. The generator and the skill
+// may use different slugs (e.g., "steam-web" vs "steam"). This function tries:
+//  1. Strip common suffixes: -web, -api, -service
+//  2. Scan directories for prefix matches (e.g., "steam" is a prefix of "steam-web")
+//
+// Returns the resolved directory path and the run ID, or empty strings if not found.
+func resolveManuscriptDir(msRoot, apiName string) (string, string) {
+	// Try stripping common suffixes
+	suffixes := []string{"-web", "-api", "-service", "-public", "-v2", "-v3"}
+	for _, suffix := range suffixes {
+		candidate := strings.TrimSuffix(apiName, suffix)
+		if candidate != apiName {
+			dir := filepath.Join(msRoot, candidate)
+			if runID, err := findMostRecentRun(dir); err == nil && runID != "" {
+				return dir, runID
+			}
+		}
+	}
+
+	// Scan directories for prefix/substring matches
+	entries, err := os.ReadDir(msRoot)
+	if err != nil {
+		return "", ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// Check if either is a prefix of the other
+		if strings.HasPrefix(apiName, name) || strings.HasPrefix(name, apiName) {
+			dir := filepath.Join(msRoot, name)
+			if runID, err := findMostRecentRun(dir); err == nil && runID != "" {
+				return dir, runID
+			}
+		}
+	}
+
+	return "", ""
 }
 
 // hasContent checks if a directory contains at least one non-directory entry,
