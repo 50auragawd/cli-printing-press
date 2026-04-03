@@ -671,17 +671,17 @@ func extractViaCookieScoop(domain, profileDir string) (string, error) {
 func extractLiveCookies(domain string) (string, error) {
 	targetURL := "https://" + strings.TrimPrefix(domain, ".")
 
-	// 1. Try agent-browser --auto-connect
-	if _, err := exec.LookPath("agent-browser"); err == nil {
-		cookies, err := extractViaAgentBrowser(targetURL)
+	// 1. Try browser-use --connect (preferred — has full DOM/cookie access)
+	if _, err := exec.LookPath("browser-use"); err == nil {
+		cookies, err := extractViaBrowserUse(targetURL)
 		if err == nil && cookies != "" {
 			return cookies, nil
 		}
 	}
 
-	// 2. Try browser-use --connect
-	if _, err := exec.LookPath("browser-use"); err == nil {
-		cookies, err := extractViaBrowserUse(targetURL)
+	// 2. Try agent-browser --auto-connect (fallback — limited eval in auto-connect mode)
+	if _, err := exec.LookPath("agent-browser"); err == nil {
+		cookies, err := extractViaAgentBrowser(targetURL)
 		if err == nil && cookies != "" {
 			return cookies, nil
 		}
