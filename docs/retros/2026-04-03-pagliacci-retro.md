@@ -209,3 +209,14 @@ No scorer bugs identified in this run.
 - **Headed login flow.** When the session was expired, the headed login workaround (open visible browser → user logs in → continue sniff) worked perfectly. The auth cookies were captured and the authenticated surface was fully discovered.
 - **Auth header interception via SPA navigation.** Once Claude used click-based navigation instead of `browser-use open`, the XHR header interceptor captured the custom PagliacciAuth scheme correctly.
 - **98% verify pass rate on first generation.** The spec was accurate enough that 41/42 commands passed all 3 verify checks without any fix loops.
+
+### 6. Auto-table shows wrong columns for complex responses (template gap)
+
+- **What happened:** `order-list list-orders` displays a table with `BUILDING, BUILDINGNAME, CLONEABLE, COMMENTS, DELTYPE, DELIVERY` — the least useful fields. The response has 22 fields including `OrderDate`, `Summary`, `Price`, `StatusCode`, but the auto-table picks columns alphabetically and stops at terminal width. The useful fields are past the cutoff.
+- **Root cause:** `printAutoTable` in `helpers.go.tmpl` has no concept of field importance. It renders all scalar fields alphabetically. For responses with many fields (>8) or nested arrays (`Summary: ["1 Pizza", "1 Pagliaccio"]`), the table format itself is wrong — a sectional/card layout per item would be better.
+- **Cross-API check:** Every API with complex list responses (orders, invoices, projects with metadata). Simple resources (stores: ID, Name, Address) work fine in tables.
+- **Frequency:** Most APIs — any list endpoint with >8 fields per item.
+- **Fallback if machine doesn't fix it:** User uses `--json | jq` or `--select id,order-date,status,price`. Works but defeats the point of human-friendly output.
+- **Worth a machine fix?** Yes. The heuristic: table for ≤8 scalar fields with no nested arrays; sectional/card format for complex responses with many fields or nested data.
+- **Durable fix:** Add format detection to `printAutoTable` in the helpers template. When the response has >8 fields or contains nested arrays/objects, switch to a sectional layout that shows each item as an indented block with labeled fields, prioritizing high-gravity fields (ID, name/title, date, status, price/amount) first.
+- **Evidence:** Pagliacci order-list shows Building/Cloneable instead of Date/Summary/Price.

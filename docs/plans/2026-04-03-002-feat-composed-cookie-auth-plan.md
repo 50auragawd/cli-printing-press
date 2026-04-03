@@ -1,7 +1,7 @@
 ---
 title: "feat: Composed cookie auth for sniff-discovered APIs"
 type: feat
-status: active
+status: completed
 date: 2026-04-03
 origin: docs/brainstorms/2026-04-03-composed-cookie-auth-requirements.md
 ---
