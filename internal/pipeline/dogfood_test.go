@@ -330,45 +330,109 @@ func TestCheckCommandTree(t *testing.T) {
 	cliDir := filepath.Join(dir, "internal", "cli")
 	require.NoError(t, os.MkdirAll(cliDir, 0o755))
 
-	// Define commands with cobra Use: fields (what users see in --help)
+	// Two constructors wired via AddCommand, one unwired
+	writeTestFile(t, filepath.Join(cliDir, "root.go"), `package cli
+func newRootCmd() {
+	rootCmd.AddCommand(newFooCmd())
+	rootCmd.AddCommand(newBarCmd())
+}
+`)
 	writeTestFile(t, filepath.Join(cliDir, "foo.go"), `package cli
 func newFooCmd() { cmd := &cobra.Command{Use: "foo"} }
 `)
 	writeTestFile(t, filepath.Join(cliDir, "bar.go"), `package cli
 func newBarCmd() { cmd := &cobra.Command{Use: "bar"} }
 `)
+	writeTestFile(t, filepath.Join(cliDir, "orphan.go"), `package cli
+func newOrphanCmd() { cmd := &cobra.Command{Use: "orphan"} }
+`)
 
-	// Without a buildable binary, checkCommandTree can't verify registration,
-	// so it treats all as registered. We test the scanning logic directly.
 	result := checkCommandTree(dir)
-	assert.Equal(t, 2, result.Defined)
-	// No cmd/ directory means no binary, so all treated as registered
+	assert.Equal(t, 3, result.Defined) // foo, bar, orphan (root excluded)
 	assert.Equal(t, 2, result.Registered)
-	assert.Empty(t, result.Unregistered)
+	assert.Equal(t, []string{"orphan"}, result.Unregistered)
 }
 
-func TestCheckCommandTree_UseFieldExtraction(t *testing.T) {
+func TestCheckCommandTree_DeeplyNested(t *testing.T) {
 	dir := t.TempDir()
 	cliDir := filepath.Join(dir, "internal", "cli")
 	require.NoError(t, os.MkdirAll(cliDir, 0o755))
 
-	// Use: fields may include positional args — we extract just the command name
-	writeTestFile(t, filepath.Join(cliDir, "api.go"), `package cli
-cmd := &cobra.Command{Use: "get-category <id>"}
-cmd2 := &cobra.Command{Use: "list-teams"}
+	// Simulate deeply nested commands like Cal.com's organizations hierarchy.
+	// All are wired via AddCommand — static analysis should find them all.
+	writeTestFile(t, filepath.Join(cliDir, "root.go"), `package cli
+func newRootCmd() {
+	rootCmd.AddCommand(newOrganizationsCmd(&flags))
+}
 `)
-	writeTestFile(t, filepath.Join(cliDir, "auth.go"), `package cli
-cmd := &cobra.Command{Use: "login"}
+	writeTestFile(t, filepath.Join(cliDir, "organizations.go"), `package cli
+func newOrganizationsCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "organizations"}
+	cmd.AddCommand(newOrgAttributesCmd(flags))
+	cmd.AddCommand(newOrgRolesCmd(flags))
+	cmd.AddCommand(newOrgOooCmd(flags))
+	return cmd
+}
 `)
-	writeTestFile(t, filepath.Join(cliDir, "sync.go"), `package cli
-cmd := &cobra.Command{Use: "sync"}
+	writeTestFile(t, filepath.Join(cliDir, "org_attributes.go"), `package cli
+func newOrgAttributesCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "attributes"}
+	return cmd
+}
+`)
+	writeTestFile(t, filepath.Join(cliDir, "org_roles.go"), `package cli
+func newOrgRolesCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "roles"}
+	return cmd
+}
+`)
+	writeTestFile(t, filepath.Join(cliDir, "org_ooo.go"), `package cli
+func newOrgOooCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "ooo"}
+	return cmd
+}
 `)
 
 	result := checkCommandTree(dir)
-	// Should find 4 defined commands: get-category, list-teams, login, sync
+	// 4 non-root constructors, all wired
 	assert.Equal(t, 4, result.Defined)
-	// Without a buildable binary, all treated as registered
 	assert.Equal(t, 4, result.Registered)
+	assert.Empty(t, result.Unregistered)
+}
+
+func TestCheckCommandTree_IndirectWiring(t *testing.T) {
+	dir := t.TempDir()
+	cliDir := filepath.Join(dir, "internal", "cli")
+	require.NoError(t, os.MkdirAll(cliDir, 0o755))
+
+	// Test indirect wiring: sub := newXxxCmd(flags); cmd.AddCommand(sub)
+	// This pattern is used by command_promoted.go.tmpl for multi-endpoint subresources.
+	writeTestFile(t, filepath.Join(cliDir, "root.go"), `package cli
+func newRootCmd() {
+	rootCmd.AddCommand(newParentCmd(&flags))
+}
+`)
+	writeTestFile(t, filepath.Join(cliDir, "parent.go"), `package cli
+func newParentCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "parent"}
+	{
+		sub := newChildCmd(flags)
+		sub.Hidden = false
+		cmd.AddCommand(sub)
+	}
+	return cmd
+}
+`)
+	writeTestFile(t, filepath.Join(cliDir, "child.go"), `package cli
+func newChildCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{Use: "child"}
+	return cmd
+}
+`)
+
+	result := checkCommandTree(dir)
+	assert.Equal(t, 2, result.Defined) // parent + child (root excluded)
+	assert.Equal(t, 2, result.Registered)
 	assert.Empty(t, result.Unregistered)
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,10 +18,20 @@ import (
 	"golang.org/x/text/language"
 )
 
-const (
+var (
 	maxResources            = 50
 	maxEndpointsPerResource = 50
 )
+
+// SetMaxEndpointsPerResource overrides the default limit of 50 endpoints per
+// resource. Use this when generating from large specs (e.g., Cal.com organizations
+// which has 50+ endpoints). The limit prevents runaway generation from malformed
+// specs while allowing legitimate large resources to be fully covered.
+func SetMaxEndpointsPerResource(n int) {
+	if n > 0 {
+		maxEndpointsPerResource = n
+	}
+}
 
 // stripBrokenRefs attempts to remove broken component references from a spec.
 // It extracts the broken key name from the error message, finds and removes it
@@ -2046,6 +2057,7 @@ func operationIDToName(operationID, resourceName string, commonPrefix []string) 
 	}
 
 	name := strings.TrimPrefix(original, "api_")
+	name = stripOperationIDControllerAndDate(name)
 	resourceVariants := operationIDResourceVariants(resourceName)
 
 	// Also strip common prefix segments (e.g., "gmail", "users" from "gmail_users_messages_list")
@@ -2118,6 +2130,28 @@ func stripOperationIDVersionPrefix(name string) string {
 			return name
 		}
 	}
+}
+
+// operationIDDatePattern matches embedded version dates (YYYY_MM_DD) in snake_case operationIDs.
+// These appear in specs like Cal.com: BookingsController_2024-08-13_getBooking → 2024_08_13
+var operationIDDatePattern = regexp.MustCompile(`_\d{4}_\d{2}_\d{2}_?`)
+
+// stripOperationIDControllerAndDate removes controller class names and embedded
+// version dates from operationIDs. APIs auto-generated from NestJS, FastAPI, or
+// similar frameworks include these patterns (e.g., BookingsController_2024-08-13_getBooking).
+func stripOperationIDControllerAndDate(name string) string {
+	// Strip controller segments: "_controller_" mid-name or "_controller" suffix
+	name = strings.ReplaceAll(name, "_controller_", "_")
+	name = strings.TrimSuffix(name, "_controller")
+
+	// Strip embedded version dates (YYYY_MM_DD)
+	name = operationIDDatePattern.ReplaceAllString(name, "_")
+
+	// Clean up doubled underscores from removals
+	for strings.Contains(name, "__") {
+		name = strings.ReplaceAll(name, "__", "_")
+	}
+	return strings.Trim(name, "_")
 }
 
 func stripOperationIDResourcePrefix(name string, variants []string) string {

@@ -185,6 +185,7 @@ type HelperFlags struct {
 	HasDelete          bool // spec has DELETE endpoints → emit classifyDeleteError
 	HasPathParams      bool // spec has path parameters → emit replacePathParam
 	HasMultiPositional bool // spec has endpoints with 2+ positional params → emit usageErr
+	HasDataLayer       bool // CLI has a local store (sync/search) → emit provenance helpers
 }
 
 // computeHelperFlags scans the spec's resources to determine which helpers are needed.
@@ -302,9 +303,11 @@ func (g *Generator) Generate() error {
 		case "readme.md.tmpl":
 			data = g.readmeData()
 		case "helpers.go.tmpl":
+			hFlags := computeHelperFlags(g.Spec)
+			hFlags.HasDataLayer = g.VisionSet.Store
 			data = &helpersTemplateData{
 				APISpec:     g.Spec,
-				HelperFlags: computeHelperFlags(g.Spec),
+				HelperFlags: hFlags,
 			}
 		default:
 			data = g.Spec

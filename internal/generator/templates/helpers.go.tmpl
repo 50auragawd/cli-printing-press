@@ -1088,6 +1088,7 @@ func findField(obj map[string]any, names ...string) string {
 	return ""
 }
 
+{{- if .HasDataLayer}}
 // DataProvenance describes where data came from and when it was last synced.
 type DataProvenance struct {
 	Source       string     `json:"source"`                  // "live" or "local"
@@ -1147,3 +1148,4 @@ func defaultDBPath(name string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", name, "data.db")
 }
+{{- end}}

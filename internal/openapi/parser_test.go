@@ -285,6 +285,14 @@ func TestOperationIDToName(t *testing.T) {
 		{operationID: "GetApplicationCommandPermissions", resourceName: "applications", want: "get-command-permissions"},
 		{operationID: "", resourceName: "users", want: ""},
 		{operationID: "list", resourceName: "users", want: "list"},
+		// Cal.com-style: controller class names + embedded version dates
+		{operationID: "BookingsController_2024-08-13_getBooking", resourceName: "bookings", want: "get"},
+		{operationID: "BookingsController_2024-08-13_createBooking", resourceName: "bookings", want: "create"},
+		{operationID: "EventTypesController_2024-06-14_getEventTypes", resourceName: "event-types", want: "get"},
+		// Controller suffix without date
+		{operationID: "OrganizationsController_getOrg", resourceName: "organizations", want: "get-org"},
+		// No controller/version pattern — should be unchanged
+		{operationID: "getBookingByUid", resourceName: "bookings", want: "get-by-uid"},
 	}
 
 	for _, tt := range tests {

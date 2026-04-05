@@ -954,115 +954,88 @@ func checkWiring(dir string) WiringCheckResult {
 	}
 }
 
-// checkCommandTree scans internal/cli/*.go for func new*Cmd() patterns,
-// then runs the built binary's --help to see which commands are registered.
-// Any newXxxCmd() whose command name doesn't appear in help is flagged.
+// checkCommandTree scans internal/cli/*.go for command constructor functions
+// (func newXxxCmd) and verifies each is wired via an AddCommand call somewhere
+// in the source. This is pure static analysis — no binary build or help-text
+// parsing needed — and correctly handles deeply nested command hierarchies that
+// help-text scraping misses.
 func checkCommandTree(dir string) CommandTreeResult {
 	result := CommandTreeResult{}
 
 	cliDir := filepath.Join(dir, "internal", "cli")
 	files := listGoFiles(cliDir)
 
-	// Scan for cobra Use: fields to get the actual command names users see.
-	// Previous approach derived names from Go function names (newXxxCmd → xxx),
-	// but function names encode file hierarchy (e.g., newBookingsPromotedCmd)
-	// while Use: fields are the actual cobra names (e.g., "bookings").
+	// Phase 1: Find all command constructor definitions and their Use: names.
+	// A constructor is func newXxxCmd(...) — we extract both the function name
+	// and the cobra Use: field (the command name users see).
+	constructorRe := regexp.MustCompile(`(?m)^func\s+(new\w+Cmd)\s*\(`)
 	useFieldRe := regexp.MustCompile(`(?m)Use:\s*"([^"\s]+)`)
-	definedCmds := make(map[string]struct{})
+
+	type cmdDef struct {
+		constructor string // e.g. "newBookingsCmd"
+		useName     string // e.g. "bookings"
+	}
+
+	var allDefs []cmdDef
+	allSource := strings.Builder{}
+
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
 		}
-		matches := useFieldRe.FindAllStringSubmatch(string(data), -1)
-		for _, match := range matches {
-			// Extract just the command name (before any positional args)
-			cmdName := strings.Fields(match[1])[0]
-			if cmdName != "" {
-				definedCmds[cmdName] = struct{}{}
+		content := string(data)
+		allSource.WriteString(content)
+		allSource.WriteString("\n")
+
+		// Find constructors in this file and pair with their Use: field
+		constructors := constructorRe.FindAllStringSubmatch(content, -1)
+		useFields := useFieldRe.FindAllStringSubmatch(content, -1)
+
+		// Build a lookup of Use: names for this file
+		var useNames []string
+		for _, m := range useFields {
+			name := strings.Fields(m[1])[0]
+			if name != "" {
+				useNames = append(useNames, name)
 			}
+		}
+
+		for i, m := range constructors {
+			funcName := m[1]
+			// Skip the root command constructor — it's not added via AddCommand
+			if funcName == "newRootCmd" {
+				continue
+			}
+			useName := funcName
+			if i < len(useNames) {
+				useName = useNames[i]
+			}
+			allDefs = append(allDefs, cmdDef{constructor: funcName, useName: useName})
 		}
 	}
 
-	result.Defined = len(definedCmds)
+	result.Defined = len(allDefs)
 	if result.Defined == 0 {
 		return result
 	}
 
-	// Try to build the binary and get help output
-	cliName := findCLIName(dir)
-	if cliName == "" {
-		// Can't verify without a binary, treat all as registered
-		result.Registered = result.Defined
-		return result
-	}
-
-	binaryPath, err := buildDogfoodBinary(dir, cliName)
-	if err != nil {
-		result.Registered = result.Defined
-		return result
-	}
-	defer func() { _ = os.Remove(binaryPath) }()
-
-	helpOut, err := runDogfoodCmd(binaryPath, 15*time.Second, "--help")
-	if err != nil {
-		result.Registered = result.Defined
-		return result
-	}
-
-	// Recursively gather help output from all command levels.
-	// Many CLIs have 3+ levels (e.g., bookings → attendees → add).
-	// Only checking two levels misses nested subcommands.
-	helpLower := strings.ToLower(helpOut)
-	var walkHelp func(parentArgs []string, depth int)
-	walkHelp = func(parentArgs []string, depth int) {
-		if depth > 4 {
-			return // safety cap
-		}
-		args := append(parentArgs, "--help")
-		out, err := runDogfoodCmd(binaryPath, 15*time.Second, args...)
-		if err != nil {
-			return
-		}
-		helpLower += "\n" + strings.ToLower(out)
-		for _, sub := range extractCommandNames(out) {
-			walkHelp(append(parentArgs, sub), depth+1)
-		}
-	}
-	for _, topCmd := range extractCommandNames(helpOut) {
-		walkHelp([]string{topCmd}, 1)
-	}
-
-	for cmdName := range definedCmds {
-		if commandFoundInHelp(helpLower, cmdName) {
+	// Phase 2: Check which constructors are called from other functions.
+	// A constructor is "wired" if it appears as a call (funcName + "(") outside
+	// its own definition. This catches both direct AddCommand(newXxxCmd(...))
+	// and indirect patterns like: sub := newXxxCmd(flags); cmd.AddCommand(sub).
+	source := allSource.String()
+	for _, def := range allDefs {
+		// Count occurrences of "constructorName(" in all source.
+		// >=2 means at least one call site beyond the func definition itself.
+		if strings.Count(source, def.constructor+"(") >= 2 {
 			result.Registered++
 		} else {
-			result.Unregistered = append(result.Unregistered, cmdName)
+			result.Unregistered = append(result.Unregistered, def.useName)
 		}
 	}
 	sort.Strings(result.Unregistered)
 	return result
-}
-
-// commandFoundInHelp checks if a command name (kebab-case) appears in help output.
-// For compound names like "api-get-category", the function name encodes the parent-child
-// hierarchy (newApiGetCategoryCmd → api-get-category), but help output shows them
-// separately: "api" at top level and "get-category" in the api subcommand help.
-// This function checks the full name first, then progressively strips leading segments
-// to match subcommand names in their parent's help output.
-func commandFoundInHelp(helpLower, cmdName string) bool {
-	if strings.Contains(helpLower, cmdName) {
-		return true
-	}
-	// Try suffix matching: "api-get-category" → "get-category" → "category"
-	parts := strings.SplitN(cmdName, "-", 2)
-	for len(parts) == 2 && parts[1] != "" {
-		if strings.Contains(helpLower, parts[1]) {
-			return true
-		}
-		parts = strings.SplitN(parts[1], "-", 2)
-	}
-	return false
 }
 
 // extractCommandNames extracts command names from cobra --help output.
