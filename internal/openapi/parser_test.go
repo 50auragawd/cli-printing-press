@@ -567,6 +567,18 @@ func TestInferDescriptionAuth(t *testing.T) {
 		assert.True(t, result.Inferred)
 	})
 
+	t.Run("custom header X-Api-Key extracted from description", func(t *testing.T) {
+		doc := &openapi3.T{
+			Info: &openapi3.Info{
+				Description: "Send your API key in the X-Api-Key header",
+			},
+		}
+		result := inferDescriptionAuth(doc, "example", spec.AuthConfig{Type: "none"})
+		assert.Equal(t, "api_key", result.Type)
+		assert.Equal(t, "X-Api-Key", result.Header, "should extract X-Api-Key, not default to Authorization")
+		assert.True(t, result.Inferred)
+	})
+
 	t.Run("nil doc returns fallback", func(t *testing.T) {
 		fb := spec.AuthConfig{Type: "none"}
 		assert.Equal(t, fb, inferDescriptionAuth(nil, "test", fb))

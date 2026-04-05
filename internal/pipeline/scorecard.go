@@ -1054,24 +1054,21 @@ func evaluateAuthProtocol(dir string, spec *openAPISpecInfo) dimensionScore {
 	configContent := readFileContent(filepath.Join(dir, "internal", "config", "config.go"))
 
 	if len(spec.SecurityRequirements) == 0 {
-		// No securitySchemes in spec — check if auth was inferred from description.
-		// Inferred auth generates env var support in config.go without declaring
-		// securitySchemes. Detect by checking for auth-specific env vars, not just
-		// any os.Getenv (BASE_URL is always present and doesn't indicate auth).
-		hasAuthEnvVar := strings.Contains(configContent, "_API_KEY") || strings.Contains(configContent, "_TOKEN\"")
-		if !hasAuthEnvVar {
-			return dimensionScore{} // genuinely no auth
+		// No securitySchemes in spec. Check if auth was inferred from description
+		// text (marked with "Auth inferred" comment in generated config.go).
+		// Do NOT match on env var names alone — inferQueryParamAuth also produces
+		// _API_KEY env vars for query-param auth, and scoring those as inferred
+		// header auth would penalize correct query-param implementations.
+		if !strings.Contains(configContent, "Auth inferred") {
+			return dimensionScore{} // no inferred auth marker → skip scoring
 		}
-		// Auth was inferred — score based on what the CLI actually has
-		score := 0
-		if hasAuthEnvVar {
-			score += 4 // auth env var support present
+		// Inferred auth — score based on what the CLI actually has
+		score := 1 // annotated as inferred (user knows to verify)
+		if strings.Contains(configContent, "os.Getenv(") {
+			score += 4 // env var support present
 		}
 		if strings.Contains(clientContent, "Authorization") {
 			score += 3 // client sends auth header
-		}
-		if strings.Contains(configContent, "Auth inferred") {
-			score += 1 // annotated as inferred (user knows to verify)
 		}
 		return dimensionScore{scored: true, score: score}
 	}

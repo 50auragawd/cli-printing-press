@@ -570,7 +570,7 @@ func inferDescriptionAuth(doc *openapi3.T, name string, fallback spec.AuthConfig
 			return spec.AuthConfig{
 				Type:     "api_key",
 				In:       "header",
-				Header:   "Authorization",
+				Header:   detectHeaderName(desc),
 				EnvVars:  []string{envPrefix + "_API_KEY"},
 				Inferred: true,
 			}
@@ -578,6 +578,27 @@ func inferDescriptionAuth(doc *openapi3.T, name string, fallback spec.AuthConfig
 	}
 
 	return fallback
+}
+
+// commonCustomHeaders are header names that APIs use instead of Authorization.
+// Checked case-insensitively against the description text.
+var commonCustomHeaders = []string{
+	"X-Api-Key",
+	"X-API-Key",
+	"X-Auth-Token",
+	"X-Access-Token",
+}
+
+// detectHeaderName scans description text for a known custom auth header name.
+// Returns the canonical casing if found, "Authorization" otherwise.
+func detectHeaderName(desc string) string {
+	lower := strings.ToLower(desc)
+	for _, h := range commonCustomHeaders {
+		if strings.Contains(lower, strings.ToLower(h)) {
+			return h
+		}
+	}
+	return "Authorization"
 }
 
 // isNegated checks if any negation word appears as a whole word within ~50 chars
