@@ -1307,9 +1307,12 @@ Present via `AskUserQuestion`:
 
 > "Shipcheck passed. How thoroughly should I test against the live API?"
 >
-> 1. **Quick check** — Read-only: doctor, list, sync, search, output modes (~5 min)
+> 1. **Quick check (recommended)** — Read-only: doctor, list, sync, search, output modes (~5 min)
 > 2. **Full dogfood** — Complete lifecycle with mutations: create, modify, cancel, sync verification (~15-30 min). I'll create test entities on your account.
-> 3. **Skip testing** — Proceed to polish
+
+There is no skip option when an API key is available. When no API key is
+available, Phase 5 auto-skips: display "No API key available — skipping live
+dogfood testing. The CLI was verified against exit codes and dry-run only."
 
 Do NOT proceed without asking. Do NOT substitute an ad-hoc smoke test.
 
@@ -1346,25 +1349,45 @@ When a test fails, fix it immediately — do not accumulate failures. Tag each f
 - **CLI fix** — specific to this printed CLI
 - **Machine issue** — should be fixed in the generator (note for retro)
 
-### Step 4: Report
+### Step 4: Report and gate
+
+Write a structured acceptance report. This report is **required** — Phase 5.6
+checks for it before promoting.
 
 ```
-Dogfood Results: <cli-name>
+Acceptance Report: <cli-name>
   Level: Quick Check / Full Dogfood
-  Tests: N/N passed
-  Fixes applied: M
+  Tests: N/M passed
+  Failures:
+    - [command]: expected [X], got [Y]
+  Fixes applied: K
     - [each fix]
-  Machine issues: K
+  Machine issues: J
     - [each issue for retro]
+  Gate: PASS / FAIL
 ```
 
-After dogfood, Phase 5.5 (Polish) runs automatically. See
-[references/dogfood-testing.md](references/dogfood-testing.md) for additional
+**Acceptance threshold:**
+- Quick Check: 5/6 core tests must pass. Auth (`doctor`) or sync failure is automatic FAIL.
+- Full Dogfood: 10/13 tests must pass. Auth or sync failure is automatic FAIL.
+
+**Gate = PASS:** proceed to Phase 5.5 (Polish).
+
+**Gate = FAIL:** fix issues inline (Step 3) and re-run failing tests, up to
+2 fix loops. If the gate still fails after 2 loops, put the CLI on hold:
+```bash
+printing-press lock release --cli <api>-pp-cli
+```
+The working copy remains in `$CLI_WORK_DIR`. Proceed to Phase 5.6 to archive
+manuscripts (archiving still happens on hold). Tag the failure reason in the
+acceptance report so the next run can learn from it.
+
+See [references/dogfood-testing.md](references/dogfood-testing.md) for additional
 guidance on common failure patterns and what NOT to test.
 
 Write:
 
-`$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-dogfood.md`
+`$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-acceptance.md`
 
 ## Phase 5.5: Polish
 
@@ -1404,6 +1427,16 @@ Write the agent's full response to:
 `$PROOFS_DIR/<stamp>-fix-<api>-pp-cli-polish.md`
 
 ## Phase 5.6: Promote and Archive
+
+### Acceptance gate check
+
+Before promoting, verify the acceptance artifact exists when an API key was
+available during this run:
+
+- If `$PROOFS_DIR/*-acceptance.md` exists with `Gate: PASS` → proceed to promote.
+- If `$PROOFS_DIR/*-acceptance.md` exists with `Gate: FAIL` → CLI is on hold. Do NOT promote. Proceed to Archive Manuscripts.
+- If no acceptance artifact exists AND an API key was available → Phase 5 was skipped. Go back and run it. Do NOT promote without it.
+- If no acceptance artifact exists AND no API key was available → acceptable. Proceed to promote (the CLI was verified mechanically only).
 
 ### Promote to Library
 

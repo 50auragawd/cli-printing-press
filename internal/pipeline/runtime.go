@@ -28,16 +28,17 @@ type VerifyConfig struct {
 
 // VerifyReport is the output of a runtime verification run.
 type VerifyReport struct {
-	Mode         string          `json:"mode"` // "live" or "mock"
-	Total        int             `json:"total"`
-	Passed       int             `json:"passed"`
-	Failed       int             `json:"failed"`
-	Critical     int             `json:"critical"`
-	PassRate     float64         `json:"pass_rate"`
-	DataPipeline bool            `json:"data_pipeline"`
-	Verdict      string          `json:"verdict"` // PASS, WARN, FAIL
-	Results      []CommandResult `json:"results"`
-	Binary       string          `json:"binary"`
+	Mode               string          `json:"mode"` // "live" or "mock"
+	Total              int             `json:"total"`
+	Passed             int             `json:"passed"`
+	Failed             int             `json:"failed"`
+	Critical           int             `json:"critical"`
+	PassRate           float64         `json:"pass_rate"`
+	DataPipeline       bool            `json:"data_pipeline"`
+	DataPipelineDetail string          `json:"data_pipeline_detail,omitempty"` // PASS, WARN, SKIP, FAIL with context
+	Verdict            string          `json:"verdict"`                        // PASS, WARN, FAIL
+	Results            []CommandResult `json:"results"`
+	Binary             string          `json:"binary"`
 }
 
 // CommandResult is the test result for a single command.
@@ -180,7 +181,7 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 	}
 
 	// 8. Data pipeline test
-	report.DataPipeline = runDataPipelineTest(binaryPath, report.Mode, buildEnv)
+	report.DataPipeline, report.DataPipelineDetail = runDataPipelineTest(binaryPath, report.Mode, buildEnv)
 
 	// 9. Compute aggregate
 	for _, r := range report.Results {
@@ -568,13 +569,14 @@ func runCommandTests(binary string, cmd discoveredCommand, mode string, env []st
 }
 
 // runDataPipelineTest tests the sync -> sql -> search -> health chain.
-func runDataPipelineTest(binary, mode string, envFn func() []string) bool {
+// Returns (pass bool, detail string) where detail gives PASS/WARN/SKIP/FAIL context.
+func runDataPipelineTest(binary, mode string, envFn func() []string) (bool, string) {
 	env := envFn()
 
 	// Create a temp dir for the test database
 	tmpDir, err := os.MkdirTemp("", "verify-db-*")
 	if err != nil {
-		return false
+		return false, "FAIL: could not create temp dir"
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
@@ -587,13 +589,45 @@ func runDataPipelineTest(binary, mode string, envFn func() []string) bool {
 		// Sync might not accept --db flag - try without
 		syncErr = runCLI(binary, []string{"sync", "--full"}, env, 30*time.Second)
 	}
+	if syncErr != nil {
+		return false, "FAIL: sync crashed"
+	}
 
 	// Test health (if available)
-	healthErr := runCLI(binary, []string{"health", "--db", dbPath}, env, 10*time.Second)
-	_ = healthErr
+	_ = runCLI(binary, []string{"health", "--db", dbPath}, env, 10*time.Second)
 
-	// The pipeline passes if sync doesn't crash (even if it syncs 0 rows from mock)
-	return syncErr == nil
+	// Discover domain tables via sql command
+	tableQuery := `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite%' AND name NOT LIKE '%_fts%' AND name != 'sync_state'`
+	tablesOut, sqlErr := runCLIWithOutput(binary, []string{"sql", tableQuery}, env, 10*time.Second)
+	if sqlErr != nil {
+		// sql command may not exist or may not accept positional args — fall back to basic check
+		return true, "PASS: sync completed (table validation skipped — sql command unavailable)"
+	}
+
+	// Parse table names from output (one per line, skip empty lines and header noise)
+	tables := parseSQLOutput(tablesOut)
+	if len(tables) == 0 {
+		return true, "WARN: sync completed but no domain tables found in sqlite_master"
+	}
+
+	// In live mode, check that at least one table has rows
+	if mode == "live" {
+		for _, table := range tables {
+			countQuery := fmt.Sprintf("SELECT count(*) FROM \"%s\"", table)
+			countOut, countErr := runCLIWithOutput(binary, []string{"sql", countQuery}, env, 10*time.Second)
+			if countErr != nil {
+				continue
+			}
+			count := parseCountOutput(countOut)
+			if count > 0 {
+				return true, fmt.Sprintf("PASS: %d domain tables, %s has %d rows", len(tables), table, count)
+			}
+		}
+		return true, fmt.Sprintf("WARN: %d domain tables created but 0 rows after sync (live mode)", len(tables))
+	}
+
+	// Mock mode: tables created is sufficient (mock data is minimal)
+	return true, fmt.Sprintf("PASS: %d domain tables created", len(tables))
 }
 
 // runCLI executes the CLI binary with the given args and returns any error.
@@ -608,6 +642,63 @@ func runCLI(binary string, args []string, env []string, timeout time.Duration) e
 		return fmt.Errorf("exit %v: %s", err, string(out))
 	}
 	return nil
+}
+
+// runCLIWithOutput executes the CLI binary and returns its combined output.
+func runCLIWithOutput(binary string, args []string, env []string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return out, fmt.Errorf("exit %v: %s", err, string(out))
+	}
+	return out, nil
+}
+
+// parseSQLOutput extracts non-empty, non-header lines from sql command output.
+func parseSQLOutput(out []byte) []string {
+	var tables []string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "name" || strings.HasPrefix(line, "---") {
+			continue
+		}
+		// Skip box-drawing borders and separators
+		if strings.HasPrefix(line, "┌") || strings.HasPrefix(line, "└") || strings.HasPrefix(line, "├") {
+			continue
+		}
+		if strings.Contains(line, "───") || strings.Contains(line, "===") {
+			continue
+		}
+		// Strip box-drawing pipe characters from cell content
+		if strings.HasPrefix(line, "│") {
+			line = strings.Trim(line, "│")
+			line = strings.TrimSpace(line)
+			if line == "" || line == "name" {
+				continue
+			}
+		}
+		tables = append(tables, line)
+	}
+	return tables
+}
+
+// parseCountOutput extracts a numeric count from sql command output.
+func parseCountOutput(out []byte) int {
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "count(*)" || strings.HasPrefix(line, "---") {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(line, "%d", &n); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 // startMockServer creates an httptest.Server from the OpenAPI spec.

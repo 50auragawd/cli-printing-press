@@ -244,3 +244,83 @@ func TestSyntheticArgValue(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSQLOutput(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "simple table names one per line",
+			input:    "bookings\nevent_types\nschedules\n",
+			expected: []string{"bookings", "event_types", "schedules"},
+		},
+		{
+			name:     "with header and separator",
+			input:    "name\n---\nbookings\nevent_types\n",
+			expected: []string{"bookings", "event_types"},
+		},
+		{
+			name:     "empty output",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "only whitespace and empty lines",
+			input:    "\n  \n\n",
+			expected: nil,
+		},
+		{
+			name:     "with box-drawing characters",
+			input:    "┌────────┐\n│ name   │\n├────────┤\n│bookings│\n└────────┘\n",
+			expected: []string{"bookings"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseSQLOutput([]byte(tt.input))
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestParseCountOutput(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+	}{
+		{
+			name:     "simple count",
+			input:    "42\n",
+			expected: 42,
+		},
+		{
+			name:     "count with header",
+			input:    "count(*)\n---\n15\n",
+			expected: 15,
+		},
+		{
+			name:     "zero count",
+			input:    "0\n",
+			expected: 0,
+		},
+		{
+			name:     "empty output",
+			input:    "",
+			expected: 0,
+		},
+		{
+			name:     "non-numeric output",
+			input:    "error: no such table\n",
+			expected: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseCountOutput([]byte(tt.input))
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

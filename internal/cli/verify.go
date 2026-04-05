@@ -142,7 +142,11 @@ func printVerifyReport(report *pipeline.VerifyReport) {
 	}
 
 	fmt.Println()
-	fmt.Printf("Data Pipeline: %s\n", passFail(report.DataPipeline))
+	if report.DataPipelineDetail != "" {
+		fmt.Printf("Data Pipeline: %s\n", report.DataPipelineDetail)
+	} else {
+		fmt.Printf("Data Pipeline: %s\n", passFail(report.DataPipeline))
+	}
 	fmt.Printf("Pass Rate: %.0f%% (%d/%d passed, %d critical)\n",
 		report.PassRate, report.Passed, report.Total, report.Critical)
 	fmt.Printf("Verdict: %s\n", report.Verdict)
