@@ -59,6 +59,9 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	// Env var overrides
+{{- if .Auth.Inferred}}
+	// Auth inferred from API description — verify the env var below is correct
+{{- end}}
 {{- range .Auth.EnvVars}}
 	if v := os.Getenv("{{.}}"); v != "" {
 		cfg.{{envVarField .}} = v
