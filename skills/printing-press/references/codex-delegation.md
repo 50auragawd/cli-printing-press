@@ -3,6 +3,8 @@
 > **When to read:** This file is referenced by Phase 3 and Phase 4 of the printing-press skill.
 > Read it when `CODEX_MODE` is true to delegate code-writing and bug-fix tasks to Codex CLI.
 
+**IMPORTANT:** Delegate via `echo $PROMPT | codex exec` in Bash. Do NOT use the Skill tool with `codex:codex-cli-runtime` - that skill is only for the rescue subagent, not general delegation.
+
 ## Phase 3: Codex Delegation
 
 When `CODEX_MODE` is true, delegate code-writing tasks to Codex CLI. Claude still decides WHAT to build and in what order. Codex does the hands — writing Go functions.
