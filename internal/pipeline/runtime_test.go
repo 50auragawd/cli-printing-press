@@ -334,3 +334,25 @@ func TestParseCountOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestRunStructuralVerify(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sample-cli")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "cmd", "sample-cli"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "cli"), 0o755))
+
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module example.com/sample-cli\n\ngo 1.26.1\n")
+	writeTestFile(t, filepath.Join(dir, "cmd", "sample-cli", "main.go"), `package main
+func main() {}
+`)
+	writeTestFile(t, filepath.Join(dir, "internal", "cli", "root.go"), `package cli
+func initRoot() {
+	rootCmd.AddCommand(newUsersListCmd())
+}
+`)
+
+	report, err := RunVerify(VerifyConfig{Dir: dir, NoSpec: true})
+	require.NoError(t, err)
+	assert.Equal(t, "structural", report.Mode)
+	assert.Equal(t, "PASS", report.Verdict)
+	assert.FileExists(t, report.Binary)
+}

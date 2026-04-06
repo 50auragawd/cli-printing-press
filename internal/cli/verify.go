@@ -21,6 +21,7 @@ func newVerifyCmd() *cobra.Command {
 	var maxIterations int
 	var asJSON bool
 	var cleanup bool
+	var noSpec bool
 
 	cmd := &cobra.Command{
 		Use:   "verify",
@@ -46,7 +47,10 @@ Use --fix to auto-patch common failures and re-test (max 3 iterations).`,
   printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --cleanup
 
   # Set pass threshold and output JSON
-  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --threshold 70 --json`,
+  printing-press verify --dir ./github-pp-cli --spec /tmp/spec.json --threshold 70 --json
+
+  # Structural verification without an API spec (plan-driven CLIs)
+  printing-press verify --dir ./agent-capture-pp-cli --no-spec`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := pipeline.VerifyConfig{
 				Dir:       dir,
@@ -54,6 +58,7 @@ Use --fix to auto-patch common failures and re-test (max 3 iterations).`,
 				APIKey:    apiKey,
 				EnvVar:    envVar,
 				Threshold: threshold,
+				NoSpec:    noSpec,
 			}
 
 			report, err := pipeline.RunVerify(cfg)
@@ -114,6 +119,7 @@ Use --fix to auto-patch common failures and re-test (max 3 iterations).`,
 	cmd.Flags().IntVar(&maxIterations, "max-iterations", 3, "Maximum fix loop iterations")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Remove transient build artifacts after verification")
+	cmd.Flags().BoolVar(&noSpec, "no-spec", false, "Structural verification only (no API spec required)")
 	_ = cmd.MarkFlagRequired("dir")
 	return cmd
 }

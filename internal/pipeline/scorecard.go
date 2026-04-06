@@ -92,21 +92,26 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 	sc.Steinberger.Workflows = scoreWorkflows(outputDir)
 	sc.Steinberger.Insight = scoreInsight(outputDir)
 
-	spec, err := loadOpenAPISpec(specPath)
-	if err != nil {
-		return nil, err
-	}
+	if specPath != "" {
+		spec, err := loadOpenAPISpec(specPath)
+		if err != nil {
+			return nil, err
+		}
 
-	pathValidity := evaluatePathValidity(outputDir, spec)
-	sc.Steinberger.PathValidity = pathValidity.score
-	if !pathValidity.scored {
-		sc.UnscoredDimensions = append(sc.UnscoredDimensions, "path_validity")
-	}
+		pathValidity := evaluatePathValidity(outputDir, spec)
+		sc.Steinberger.PathValidity = pathValidity.score
+		if !pathValidity.scored {
+			sc.UnscoredDimensions = append(sc.UnscoredDimensions, "path_validity")
+		}
 
-	authProtocol := evaluateAuthProtocol(outputDir, spec)
-	sc.Steinberger.AuthProtocol = authProtocol.score
-	if !authProtocol.scored {
-		sc.UnscoredDimensions = append(sc.UnscoredDimensions, "auth_protocol")
+		authProtocol := evaluateAuthProtocol(outputDir, spec)
+		sc.Steinberger.AuthProtocol = authProtocol.score
+		if !authProtocol.scored {
+			sc.UnscoredDimensions = append(sc.UnscoredDimensions, "auth_protocol")
+		}
+	} else {
+		// No spec: mark spec-dependent dimensions as unscored.
+		sc.UnscoredDimensions = append(sc.UnscoredDimensions, "path_validity", "auth_protocol")
 	}
 
 	sc.Steinberger.DataPipelineIntegrity = scoreDataPipelineIntegrity(outputDir)
