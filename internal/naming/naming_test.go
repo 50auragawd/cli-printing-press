@@ -18,6 +18,19 @@ func TestTrimCLISuffix(t *testing.T) {
 	}
 }
 
+func TestMCP(t *testing.T) {
+	tests := map[string]string{
+		"stripe":  "stripe-pp-mcp",
+		"cal-com": "cal-com-pp-mcp",
+		"notion":  "notion-pp-mcp",
+	}
+	for input, want := range tests {
+		if got := MCP(input); got != want {
+			t.Fatalf("MCP(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestIsCLIDirName(t *testing.T) {
 	if !IsCLIDirName("stripe-pp-cli-3") {
 		t.Fatal("expected suffixed pp-cli directory to be recognized")
