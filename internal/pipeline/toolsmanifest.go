@@ -1,6 +1,8 @@
 package pipeline
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -341,4 +343,11 @@ func sortedEndpointKeys(m map[string]spec.Endpoint) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// ComputeToolsManifestChecksum returns the SHA-256 checksum of manifest data
+// in "sha256:<hex>" format, matching the format used in registry.json.
+func ComputeToolsManifestChecksum(data []byte) string {
+	h := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(h[:])
 }
