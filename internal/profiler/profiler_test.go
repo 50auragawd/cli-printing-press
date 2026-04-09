@@ -461,3 +461,120 @@ func discordSpec() *spec.APISpec {
 		},
 	}
 }
+
+func TestProfileDateRangeParam(t *testing.T) {
+	s := &spec.APISpec{
+		Name: "sportsdata",
+		Resources: map[string]spec.Resource{
+			"scoreboard": {
+				Endpoints: map[string]spec.Endpoint{
+					"get": {
+						Method: "GET",
+						Path:   "/scoreboard",
+						Params: []spec.Param{
+							{Name: "dates", Type: "string", Description: "Date range YYYYMMDD-YYYYMMDD"},
+							{Name: "limit", Type: "int", Default: 100},
+						},
+						Response: spec.ResponseDef{Type: "object", Item: "ScoreboardResponse"},
+					},
+				},
+			},
+		},
+		Types: map[string]spec.TypeDef{
+			"ScoreboardResponse": {
+				Fields: []spec.TypeField{
+					{Name: "events", Type: "string"},
+					{Name: "leagues", Type: "string"},
+				},
+			},
+		},
+	}
+
+	profile := Profile(s)
+	assert.Equal(t, "dates", profile.Pagination.DateRangeParam)
+}
+
+func TestProfileDateRangeParam_SingularDateNotMatched(t *testing.T) {
+	s := &spec.APISpec{
+		Name: "calendar",
+		Resources: map[string]spec.Resource{
+			"events": {
+				Endpoints: map[string]spec.Endpoint{
+					"list": {
+						Method:   "GET",
+						Path:     "/events",
+						Params:   []spec.Param{{Name: "date", Type: "string"}, {Name: "limit", Type: "int"}},
+						Response: spec.ResponseDef{Type: "array"},
+					},
+				},
+			},
+		},
+	}
+
+	profile := Profile(s)
+	assert.Empty(t, profile.Pagination.DateRangeParam, "singular 'date' must not match DateRangeParam")
+}
+
+func TestProfileWrapperObjectDetection(t *testing.T) {
+	s := &spec.APISpec{
+		Name: "sportsdata",
+		Resources: map[string]spec.Resource{
+			"scoreboard": {
+				Endpoints: map[string]spec.Endpoint{
+					"get": {
+						Method:   "GET",
+						Path:     "/scoreboard",
+						Response: spec.ResponseDef{Type: "object", Item: "ScoreboardResponse"},
+					},
+				},
+			},
+		},
+		Types: map[string]spec.TypeDef{
+			"ScoreboardResponse": {
+				Fields: []spec.TypeField{
+					{Name: "events", Type: "string"},
+					{Name: "leagues", Type: "string"},
+				},
+			},
+		},
+	}
+
+	profile := Profile(s)
+	syncNames := make([]string, len(profile.SyncableResources))
+	for i, sr := range profile.SyncableResources {
+		syncNames[i] = sr.Name
+	}
+	assert.Contains(t, syncNames, "scoreboard", "wrapper-object endpoint with 'events' field should be syncable")
+}
+
+func TestProfileWrapperObjectDetection_NoFalsePositive(t *testing.T) {
+	s := &spec.APISpec{
+		Name: "config",
+		Resources: map[string]spec.Resource{
+			"settings": {
+				Endpoints: map[string]spec.Endpoint{
+					"get": {
+						Method:   "GET",
+						Path:     "/settings",
+						Response: spec.ResponseDef{Type: "object", Item: "Settings"},
+					},
+				},
+			},
+		},
+		Types: map[string]spec.TypeDef{
+			"Settings": {
+				Fields: []spec.TypeField{
+					{Name: "theme", Type: "string"},
+					{Name: "language", Type: "string"},
+				},
+			},
+		},
+	}
+
+	profile := Profile(s)
+	syncNames := make([]string, len(profile.SyncableResources))
+	for i, sr := range profile.SyncableResources {
+		syncNames[i] = sr.Name
+	}
+	assert.NotContains(t, syncNames, "settings", "non-wrapper object should not be syncable")
+}
