@@ -19,10 +19,20 @@ import (
 )
 
 var (
-	maxResources            = 50
+	maxResources            = 500
 	maxEndpointsPerResource = 50
 	endpointLimitExplicit   = false // true when user set --max-endpoints-per-resource
+	resourceLimitExplicit   = false // true when user set --max-resources
 )
+
+// SetMaxResources overrides the default resource limit. When not called,
+// the parser uses a default of 500 which accommodates all known APIs.
+func SetMaxResources(n int) {
+	if n > 0 {
+		maxResources = n
+		resourceLimitExplicit = true
+	}
+}
 
 // SetMaxEndpointsPerResource overrides the default limit and disables
 // auto-calibration. When not called, the parser auto-calibrates the limit

@@ -74,6 +74,7 @@ func newGenerateCmd() *cobra.Command {
 	var clientPattern string
 	var researchDir string
 	var maxEndpointsPerResource int
+	var maxResources int
 	var specURL string
 
 	cmd := &cobra.Command{
@@ -215,6 +216,9 @@ func newGenerateCmd() *cobra.Command {
 				return &ExitError{Code: ExitInputError, Err: fmt.Errorf("--spec is required")}
 			}
 
+			if maxResources > 0 {
+				openapi.SetMaxResources(maxResources)
+			}
 			if maxEndpointsPerResource > 0 {
 				openapi.SetMaxEndpointsPerResource(maxEndpointsPerResource)
 			}
@@ -389,6 +393,7 @@ func newGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&specSource, "spec-source", "", "Spec provenance: official, community, sniffed, docs (affects generated client defaults like rate limiting)")
 	cmd.Flags().StringVar(&clientPattern, "client-pattern", "", "HTTP client pattern: rest (default), proxy-envelope (wraps requests in POST envelope)")
 	cmd.Flags().StringVar(&researchDir, "research-dir", "", "Pipeline directory containing research.json and discovery/ for README source credits")
+	cmd.Flags().IntVar(&maxResources, "max-resources", 0, "Maximum resource groups to generate (default 500, raise for enormous APIs)")
 	cmd.Flags().IntVar(&maxEndpointsPerResource, "max-endpoints-per-resource", 0, "Maximum endpoints per resource (default 50, raise for large APIs)")
 	cmd.Flags().StringVar(&specURL, "spec-url", "", "Original spec URL for provenance (use when --spec is a local file downloaded from a URL)")
 
