@@ -412,8 +412,8 @@ func TestPromoteWorkingCLI_MinimalStateNoRunstate(t *testing.T) {
 	err := PromoteWorkingCLI("test-pp-cli", workDir, state)
 	require.NoError(t, err)
 
-	// Verify library dir exists with copied content.
-	libDir := filepath.Join(PublishedLibraryRoot(), "test-pp-cli")
+	// Verify library dir exists with copied content (slug-keyed, not CLI-named).
+	libDir := filepath.Join(PublishedLibraryRoot(), "test")
 	_, err = os.Stat(filepath.Join(libDir, "go.mod"))
 	assert.NoError(t, err)
 	_, err = os.Stat(filepath.Join(libDir, "main.go"))
