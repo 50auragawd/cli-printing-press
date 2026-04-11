@@ -1155,6 +1155,16 @@ func evaluateAuthProtocol(dir string, spec *openAPISpecInfo) dimensionScore {
 		if strings.Contains(clientContent, "Authorization") || strings.Contains(clientContent, "X-Api-Key") || strings.Contains(clientContent, "X-Auth-Token") || strings.Contains(clientContent, "X-Access-Token") {
 			score += 3 // client sends auth header (standard or custom)
 		}
+		// Query-param auth (e.g., TMDb ?api_key=, Google Maps ?key=):
+		// the client adds the API key to the URL query string instead of a header.
+		if strings.Contains(clientContent, `q.Set("api_key"`) ||
+			strings.Contains(clientContent, `q.Set("key"`) ||
+			strings.Contains(clientContent, `q.Set("apikey"`) ||
+			strings.Contains(clientContent, `q.Set("apiKey"`) ||
+			strings.Contains(clientContent, `params["api_key"]`) ||
+			strings.Contains(clientContent, `params["apikey"]`) {
+			score += 3 // client sends auth via query param
+		}
 		return dimensionScore{scored: true, score: score}
 	}
 	authContent := readFileContent(filepath.Join(dir, "internal", "cli", "auth.go"))
