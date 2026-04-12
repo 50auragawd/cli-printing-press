@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -24,11 +26,36 @@ jobs:
 
       - name: Validate changed catalog entries
         run: |
-          for file in $(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD -- 'catalog/*.yaml'); do
+          set -euo pipefail
+
+          # Ensure the base ref is fetched locally so the diff below resolves.
+          # actions/checkout with fetch-depth: 0 should cover this, but fetch
+          # explicitly to guard against partial-clone edge cases on fork PRs.
+          git fetch --no-tags --prune origin "${{ github.base_ref }}"
+
+          mapfile -t CHANGED < <(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- 'catalog/*.yaml')
+
+          if [ ${#CHANGED[@]} -eq 0 ]; then
+            echo "FAIL: workflow triggered on catalog/** changes but git diff found no changed catalog/*.yaml files."
+            echo "This usually means the base ref was not fetched. Check actions/checkout fetch-depth."
+            exit 1
+          fi
+
+          echo "Found ${#CHANGED[@]} changed catalog file(s):"
+          printf '  - %s\n' "${CHANGED[@]}"
+
+          for file in "${CHANGED[@]}"; do
             echo "=== Validating $file ==="
 
+            # Wrapper-only entries (no spec_url) have nothing to fetch or generate.
+            # The schema test above already validated them against catalog rules.
+            if ! grep -q '^spec_url:' "$file"; then
+              echo "SKIP: wrapper-only entry (no spec_url)"
+              continue
+            fi
+
             # Extract spec_url
-            SPEC_URL=$(grep 'spec_url:' "$file" | sed 's/spec_url: *//')
+            SPEC_URL=$(grep '^spec_url:' "$file" | sed 's/spec_url: *//')
 
             # Verify HTTPS
             if [[ ! "$SPEC_URL" =~ ^https:// ]]; then
@@ -47,7 +74,7 @@ jobs:
 
             # Download and generate
             curl -sL -o /tmp/spec-validate.yaml "$SPEC_URL"
-            NAME=$(grep 'name:' "$file" | head -1 | sed 's/name: *//')
+            NAME=$(grep '^name:' "$file" | head -1 | sed 's/name: *//')
 
             ./printing-press generate \
               --spec /tmp/spec-validate.yaml \
