@@ -24,9 +24,28 @@ A side-by-side of a generic vs. optimized README exposed four machine bugs that 
 
 ## Non-goals
 
-- A "Why this CLI?" comparison table (Q6 "wide" scope). Requires threading competitor-research data (`CompetitorInsights`) into generator template context. Higher-effort, lower leverage than fixing scaffolding hallucinations. Deferred.
+- A "Why this CLI?" comparison table. Considered and **intentionally not pursued** — see "Rejected: competitor comparison table" below.
 - Changing per-command `--help` output. Currently driven by spec descriptions — leave alone.
 - Updating the downstream `generate-skills` script. That lives in `mvanhorn/printing-press-library` and is a separate PR.
+
+## Rejected: competitor comparison table
+
+An earlier version of this plan deferred a `## Why this CLI?` section that would render a table grouping competitors by archetype (library / tiny CLI / MCP server) with per-bucket weakness lines. After shipping the narrative enrichment, we re-evaluated and decided to **drop it permanently** rather than defer.
+
+**Why the current approach already covers the need:**
+
+- The bold `Headline` + `ValueProp` state the differentiator positively in the first paragraph.
+- Grouped `## Unique Features` with `Example` and `WhyItMatters` demonstrates the novel capabilities with copy-pasteable commands — readers see what they can do, not what others can't.
+- `## Sources & Inspiration` already credits the real competitors (name, stars, language) generously, without calling out their gaps.
+
+**Why adding a comparison table is a bad trade:**
+
+- **Decay risk.** A table claiming "tool X has no JSON output" becomes wrong the moment X adds it, and we have no signal to regenerate. Positive differentiation doesn't decay because it describes our CLI, not theirs.
+- **Reputation risk.** Auto-generated "what's missing" lines about other people's open-source projects, in a README that also credits them, is a jarring tonal shift. A single LLM hallucination about a real project is visibly wrong in a public library.
+- **New failure mode.** Positive differentiation degrades gracefully — a CLI with few novel features just has a shorter Unique Features block. A comparison table needs competitor classification + weakness synthesis to work at all.
+- **Marketing vs. reference docs.** Comparison tables are marketing copy that works when a human author *knows* the ecosystem. Machine-generated marketing copy about other people's work is a fundamentally different risk profile than machine-generated docs about our own CLI.
+
+**When a future CLI needs to position against a named incumbent**, that's a narrative field the absorb skill can author as prose in `ValueProp` ("unlike existing Python wrappers, this ships as a single Go binary with no runtime deps") — no table infrastructure needed. That path already works today.
 
 ## Design decisions (locked)
 
@@ -37,7 +56,7 @@ A side-by-side of a generic vs. optimized README exposed four machine bugs that 
 | Q3 | SKILL.md lands at `library/<category>/<api>/SKILL.md` (sibling to README) | First-class artifact, visible in PRs, downstream becomes copy-not-synthesize |
 | Q4 | Hybrid: deterministic template structure + LLM-authored narrative fields | Uses already-running absorb pass; reproducible on rebuild via `research.json` |
 | Q5 | Loose target shape (yahoo-finance SKILL.md is a data point, not gold standard) | Pattern derived from the optimized README's groupings |
-| Q6 | Medium scope: fix the 4 bugs, enrich README with narrative, add SKILL.md, add root `Long` | Lower-risk than wide scope; leaves competitor-table for later |
+| Q6 | Medium scope: fix the 4 bugs, enrich README with narrative, add SKILL.md, add root `Long` | Lower-risk than wide scope; competitor-table option rejected outright (see "Rejected" section) |
 | — | Drop `## Cookbook` section entirely | Quick Start + grouped Unique Features with examples do the job; optimized README has no Cookbook |
 | — | LLM-author trigger phrases per CLI | Domain verbs vary (finance: "quote X"; media: "play X"); template verbs are too generic |
 | — | No silent fallbacks for LLM failures in absorb | Printing press already hard-depends on LLM; narrative rides on existing call. Validate JSON, retry once on parse failure, fail absorb on second failure. |
