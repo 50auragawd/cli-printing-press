@@ -33,12 +33,48 @@ type ReadmeSource struct {
 	Stars    int
 }
 
-// NovelFeature represents a transcendence feature for the README.
+// NovelFeature represents a transcendence feature for the README and SKILL.md.
 type NovelFeature struct {
-	Name        string
+	Name         string
+	Command      string
+	Description  string
+	Rationale    string
+	Example      string // ready-to-run invocation
+	WhyItMatters string // one-sentence agent-facing rationale
+	Group        string // theme name for grouped rendering
+}
+
+// QuickStartStep mirrors pipeline.QuickStartStep for template rendering.
+type QuickStartStep struct {
+	Command string
+	Comment string
+}
+
+// Recipe mirrors pipeline.Recipe for SKILL.md template rendering.
+type Recipe struct {
+	Title       string
 	Command     string
-	Description string
-	Rationale   string
+	Explanation string
+}
+
+// TroubleshootTip mirrors pipeline.TroubleshootTip for template rendering.
+type TroubleshootTip struct {
+	Symptom string
+	Fix     string
+}
+
+// ReadmeNarrative mirrors pipeline.ReadmeNarrative for template rendering.
+// Holds LLM-authored prose that makes generated docs feel like product
+// documentation rather than scaffolding. All fields are optional.
+type ReadmeNarrative struct {
+	Headline       string
+	ValueProp      string
+	AuthNarrative  string
+	QuickStart     []QuickStartStep
+	Troubleshoots  []TroubleshootTip
+	WhenToUse      string
+	Recipes        []Recipe
+	TriggerPhrases []string
 }
 
 // DomainContext holds structured domain knowledge for MCP-connected agents.
@@ -72,9 +108,10 @@ type Generator struct {
 	OutputDir      string
 	VisionSet      VisionTemplateSet
 	FixtureSet     *websniff.FixtureSet
-	Sources        []ReadmeSource // Ecosystem tools to credit in README
-	DiscoveryPages []string       // Pages visited during sniff discovery
-	NovelFeatures  []NovelFeature // Transcendence features for README
+	Sources        []ReadmeSource   // Ecosystem tools to credit in README
+	DiscoveryPages []string         // Pages visited during sniff discovery
+	NovelFeatures  []NovelFeature   // Transcendence features for README/SKILL
+	Narrative      *ReadmeNarrative // LLM-authored prose for README/SKILL; optional
 	profile        *profiler.APIProfile
 	funcs          template.FuncMap
 	templates      map[string]*template.Template
@@ -331,6 +368,7 @@ type readmeTemplateData struct {
 	Sources        []ReadmeSource
 	DiscoveryPages []string
 	NovelFeatures  []NovelFeature
+	Narrative      *ReadmeNarrative
 }
 
 func (g *Generator) readmeData() *readmeTemplateData {
@@ -345,6 +383,7 @@ func (g *Generator) readmeData() *readmeTemplateData {
 		Sources:        g.Sources,
 		DiscoveryPages: g.DiscoveryPages,
 		NovelFeatures:  g.NovelFeatures,
+		Narrative:      g.Narrative,
 	}
 }
 

@@ -766,15 +766,57 @@ func loadResearchSources(gen *generator.Generator, researchDir string) {
 		}
 		for _, nf := range novelSrc {
 			gen.NovelFeatures = append(gen.NovelFeatures, generator.NovelFeature{
-				Name:        nf.Name,
-				Command:     nf.Command,
-				Description: nf.Description,
-				Rationale:   nf.Rationale,
+				Name:         nf.Name,
+				Command:      nf.Command,
+				Description:  nf.Description,
+				Rationale:    nf.Rationale,
+				Example:      nf.Example,
+				WhyItMatters: nf.WhyItMatters,
+				Group:        nf.Group,
 			})
+		}
+		if research.Narrative != nil {
+			gen.Narrative = translateNarrative(research.Narrative)
 		}
 	}
 	discoveryDir := filepath.Join(researchDir, "discovery")
 	gen.DiscoveryPages = pipeline.ParseDiscoveryPages(discoveryDir)
+}
+
+// translateNarrative copies an absorb-phase pipeline.ReadmeNarrative into
+// the generator's template-facing struct. Kept as a thin adapter so the
+// pipeline package doesn't leak into template data shapes.
+func translateNarrative(n *pipeline.ReadmeNarrative) *generator.ReadmeNarrative {
+	if n == nil {
+		return nil
+	}
+	out := &generator.ReadmeNarrative{
+		Headline:       n.Headline,
+		ValueProp:      n.ValueProp,
+		AuthNarrative:  n.AuthNarrative,
+		WhenToUse:      n.WhenToUse,
+		TriggerPhrases: append([]string(nil), n.TriggerPhrases...),
+	}
+	for _, qs := range n.QuickStart {
+		out.QuickStart = append(out.QuickStart, generator.QuickStartStep{
+			Command: qs.Command,
+			Comment: qs.Comment,
+		})
+	}
+	for _, tt := range n.Troubleshoots {
+		out.Troubleshoots = append(out.Troubleshoots, generator.TroubleshootTip{
+			Symptom: tt.Symptom,
+			Fix:     tt.Fix,
+		})
+	}
+	for _, r := range n.Recipes {
+		out.Recipes = append(out.Recipes, generator.Recipe{
+			Title:       r.Title,
+			Command:     r.Command,
+			Explanation: r.Explanation,
+		})
+	}
+	return out
 }
 
 // enrichSpecFromCatalog looks up the API in the embedded catalog and copies

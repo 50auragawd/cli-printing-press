@@ -34,6 +34,10 @@ type ResearchResult struct {
 	// NOT omitempty: an empty [] means "dogfood ran, nothing survived" while a
 	// missing field means "dogfood hasn't validated yet."
 	NovelFeaturesBuilt *[]NovelFeature `json:"novel_features_built,omitempty"`
+	// Narrative holds LLM-authored prose for README and SKILL.md rendering.
+	// Optional: templates fall back to generic content when absent. Populated
+	// during the absorb phase alongside NovelFeatures.
+	Narrative *ReadmeNarrative `json:"narrative,omitempty"`
 }
 
 // NovelFeature represents a transcendence feature invented during the absorb
@@ -49,6 +53,77 @@ type NovelFeature struct {
 	// names (e.g. `["auth login-chrome", "auth browser-login"]`). Empty by
 	// default — the three-pass matcher still covers most natural drift.
 	Aliases []string `json:"aliases,omitempty"`
+	// Example is a ready-to-run invocation with realistic arguments. Rendered
+	// beneath the feature's description in README and SKILL so agents can
+	// copy-paste without synthesizing args. Authored by the absorb LLM pass.
+	Example string `json:"example,omitempty"`
+	// WhyItMatters is a one-sentence agent-facing rationale for when to reach
+	// for this feature. Rendered as italic text beneath the description.
+	WhyItMatters string `json:"why_it_matters,omitempty"`
+	// Group is a theme name used to cluster features in README and SKILL
+	// (e.g. "Local state that compounds", "Reachability mitigation"). When
+	// any feature carries a Group, the Unique Features block switches from
+	// a flat bullet list to grouped subsections. Empty means ungrouped.
+	Group string `json:"group,omitempty"`
+}
+
+// ReadmeNarrative holds LLM-authored prose and examples used to make the
+// generated README and SKILL.md feel like product documentation rather than
+// scaffolding. All fields are optional; templates degrade gracefully when
+// absent. Populated during the absorb phase from the brief and competitor
+// research; persisted in research.json so rebuilds are reproducible.
+type ReadmeNarrative struct {
+	// Headline is a bold one-sentence value prop rendered beneath the title
+	// (e.g. "Every Notion feature, plus sync, search, and a local database").
+	Headline string `json:"headline,omitempty"`
+	// ValueProp is a 2–3 sentence expansion of the headline rendered as a
+	// paragraph between the headline and Install.
+	ValueProp string `json:"value_prop,omitempty"`
+	// AuthNarrative is an API-specific authentication story (how the API
+	// actually works, not just "set an env var"). Rendered in place of the
+	// generic auth branch when present.
+	AuthNarrative string `json:"auth_narrative,omitempty"`
+	// QuickStart is a sequence of realistic command invocations forming a
+	// "try this" flow. Rendered in the Quick Start section when populated,
+	// replacing the generic first-resource example.
+	QuickStart []QuickStartStep `json:"quickstart,omitempty"`
+	// Troubleshoots are API-specific symptom/fix pairs appended to the
+	// generic Troubleshooting bullets.
+	Troubleshoots []TroubleshootTip `json:"troubleshoots,omitempty"`
+	// WhenToUse is a 2–4 sentence narrative rendered in SKILL.md describing
+	// the CLI's ideal use cases. Not rendered in README.
+	WhenToUse string `json:"when_to_use,omitempty"`
+	// Recipes are worked examples rendered in SKILL.md's Recipes section.
+	// Each recipe is a titled command with an explanation.
+	Recipes []Recipe `json:"recipes,omitempty"`
+	// TriggerPhrases are natural-language phrases that should invoke this
+	// CLI's skill. LLM-authored per CLI so domain verbs vary appropriately
+	// (finance: "quote AAPL"; media: "play track X"). Rendered in SKILL
+	// frontmatter's description field.
+	TriggerPhrases []string `json:"trigger_phrases,omitempty"`
+}
+
+// QuickStartStep is a single step in a Quick Start flow. Comment is an
+// optional human-readable preamble (rendered as a bash comment above the
+// command) so agents understand *why* the command runs.
+type QuickStartStep struct {
+	Command string `json:"command"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// Recipe is a worked example for SKILL.md. Title is rendered as a heading,
+// Command as a fenced code block, Explanation as a paragraph beneath.
+type Recipe struct {
+	Title       string `json:"title"`
+	Command     string `json:"command"`
+	Explanation string `json:"explanation,omitempty"`
+}
+
+// TroubleshootTip pairs a user-visible symptom with an actionable fix.
+// Rendered as "**Symptom** — Fix" bullets in the Troubleshooting section.
+type TroubleshootTip struct {
+	Symptom string `json:"symptom"`
+	Fix     string `json:"fix"`
 }
 
 // CompetitorAnalysis holds intelligence gathered from a single competitor repo.

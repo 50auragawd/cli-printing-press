@@ -268,6 +268,61 @@ func TestWriteAndLoadResearchWithNovelFeatures(t *testing.T) {
 	assert.Equal(t, "Stale booking triage", loaded.NovelFeatures[1].Name)
 }
 
+func TestWriteAndLoadResearchWithEnrichedNovelFeatures(t *testing.T) {
+	dir := t.TempDir()
+	result := &ResearchResult{
+		APIName:        "test-api",
+		NoveltyScore:   9,
+		Recommendation: "proceed",
+		NovelFeatures: []NovelFeature{
+			{
+				Name:         "Portfolio perf",
+				Command:      "portfolio perf",
+				Description:  "Compute unrealized P&L across synced lots",
+				Rationale:    "No existing tool joins live quotes with a local cost basis",
+				Example:      "yahoo-finance-pp-cli portfolio perf --agent",
+				WhyItMatters: "Agents can answer \"how's my portfolio?\" without a second lookup",
+				Group:        "Local state that compounds",
+			},
+		},
+		Narrative: &ReadmeNarrative{
+			Headline:  "Every Yahoo Finance feature plus a local portfolio tracker",
+			ValueProp: "Quotes, charts, fundamentals, options chains — plus portfolio and watchlist state nothing else has.",
+			QuickStart: []QuickStartStep{
+				{Command: "yahoo-finance-pp-cli quote AAPL", Comment: "Your first quote"},
+			},
+			Troubleshoots: []TroubleshootTip{
+				{Symptom: "HTTP 429 on every request", Fix: "Import a Chrome session via auth login-chrome"},
+			},
+			WhenToUse:      "Reach for this CLI when an agent needs quotes, fundamentals, or persistent portfolio state against Yahoo Finance.",
+			Recipes:        []Recipe{{Title: "Morning digest", Command: "yahoo-finance-pp-cli digest --watchlist tech", Explanation: "Biggest movers across a named watchlist."}},
+			TriggerPhrases: []string{"quote AAPL", "check my portfolio", "options for TSLA"},
+		},
+	}
+
+	err := writeResearchJSON(result, dir)
+	require.NoError(t, err)
+
+	loaded, err := LoadResearch(dir)
+	require.NoError(t, err)
+	require.Len(t, loaded.NovelFeatures, 1)
+	nf := loaded.NovelFeatures[0]
+	assert.Equal(t, "yahoo-finance-pp-cli portfolio perf --agent", nf.Example)
+	assert.Equal(t, "Agents can answer \"how's my portfolio?\" without a second lookup", nf.WhyItMatters)
+	assert.Equal(t, "Local state that compounds", nf.Group)
+
+	require.NotNil(t, loaded.Narrative)
+	assert.Equal(t, "Every Yahoo Finance feature plus a local portfolio tracker", loaded.Narrative.Headline)
+	assert.Len(t, loaded.Narrative.QuickStart, 1)
+	assert.Equal(t, "Your first quote", loaded.Narrative.QuickStart[0].Comment)
+	assert.Len(t, loaded.Narrative.Troubleshoots, 1)
+	assert.Equal(t, "HTTP 429 on every request", loaded.Narrative.Troubleshoots[0].Symptom)
+	assert.Equal(t, "Reach for this CLI when an agent needs quotes, fundamentals, or persistent portfolio state against Yahoo Finance.", loaded.Narrative.WhenToUse)
+	require.Len(t, loaded.Narrative.Recipes, 1)
+	assert.Equal(t, "Morning digest", loaded.Narrative.Recipes[0].Title)
+	assert.Equal(t, []string{"quote AAPL", "check my portfolio", "options for TSLA"}, loaded.Narrative.TriggerPhrases)
+}
+
 func TestWriteAndLoadResearchWithoutNovelFeatures(t *testing.T) {
 	dir := t.TempDir()
 	result := &ResearchResult{
