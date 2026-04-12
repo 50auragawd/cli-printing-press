@@ -110,7 +110,7 @@ These capabilities aren't available in any other tool for this API.
 
 ## Usage
 
-<!-- HELP_OUTPUT -->
+Run `{{.Name}}-pp-cli --help` for the full command reference and flag list.
 
 ## Commands
 {{range $name, $resource := .Resources}}
@@ -251,7 +251,7 @@ Common workflows and recipes:
 {{.Name}}-pp-cli doctor
 ```
 
-<!-- DOCTOR_OUTPUT -->
+Verifies configuration{{if and (ne .Auth.Type "") (ne .Auth.Type "none")}}, credentials,{{end}} and connectivity to the API.
 
 ## Configuration
 

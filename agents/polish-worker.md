@@ -112,11 +112,6 @@ README.** Never guess flag names, argument formats, or valid values. If you
 write `--start-time` but the flag is `--start`, the README is wrong and
 users will get errors on their first try.
 
-**Fill or remove all `<!-- ... -->` HTML comment placeholders.** Replace
-`<!-- HELP_OUTPUT -->` with real `--help` output (or remove the section).
-Replace `<!-- DOCTOR_OUTPUT -->` with real `doctor` output. Empty
-placeholders signal an unfinished product.
-
 #### Inject novel features from research
 
 If the README lacks a `## Unique Features` section, check whether the
