@@ -40,19 +40,20 @@ type Scorecard struct {
 
 // SteinerScore breaks down the Steinberger bar into 11 dimensions, each 0-10.
 type SteinerScore struct {
-	OutputModes   int `json:"output_modes"`   // 0-10
-	Auth          int `json:"auth"`           // 0-10
-	ErrorHandling int `json:"error_handling"` // 0-10
-	TerminalUX    int `json:"terminal_ux"`    // 0-10
-	README        int `json:"readme"`         // 0-10
-	Doctor        int `json:"doctor"`         // 0-10
-	AgentNative   int `json:"agent_native"`   // 0-10
-	MCPQuality    int `json:"mcp_quality"`    // 0-10
-	LocalCache    int `json:"local_cache"`    // 0-10
-	Breadth       int `json:"breadth"`        // 0-10: how many commands (penalizes empty CLIs)
-	Vision        int `json:"vision"`         // 0-10
-	Workflows     int `json:"workflows"`      // 0-10
-	Insight       int `json:"insight"`        // 0-10
+	OutputModes   int `json:"output_modes"`         // 0-10
+	Auth          int `json:"auth"`                 // 0-10
+	ErrorHandling int `json:"error_handling"`       // 0-10
+	TerminalUX    int `json:"terminal_ux"`          // 0-10
+	README        int `json:"readme"`               // 0-10
+	Doctor        int `json:"doctor"`               // 0-10
+	AgentNative   int `json:"agent_native"`         // 0-10
+	MCPQuality    int `json:"mcp_quality"`          // 0-10
+	MCPTokenEff   int `json:"mcp_token_efficiency"` // 0-10; unscored when no MCP surface
+	LocalCache    int `json:"local_cache"`          // 0-10
+	Breadth       int `json:"breadth"`              // 0-10: how many commands (penalizes empty CLIs)
+	Vision        int `json:"vision"`               // 0-10
+	Workflows     int `json:"workflows"`            // 0-10
+	Insight       int `json:"insight"`              // 0-10
 	// Tier 2: Domain Correctness (semantic checks)
 	PathValidity          int    `json:"path_validity"`           // 0-10
 	AuthProtocol          int    `json:"auth_protocol"`           // 0-10
@@ -90,6 +91,11 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 	sc.Steinberger.Doctor = scoreDoctor(outputDir)
 	sc.Steinberger.AgentNative = scoreAgentNative(outputDir)
 	sc.Steinberger.MCPQuality = scoreMCPQuality(outputDir)
+	if mcpTokenScore, scored := scoreMCPTokenEfficiency(outputDir); scored {
+		sc.Steinberger.MCPTokenEff = mcpTokenScore
+	} else {
+		sc.UnscoredDimensions = append(sc.UnscoredDimensions, "mcp_token_efficiency")
+	}
 	sc.Steinberger.LocalCache = scoreLocalCache(outputDir)
 	sc.Steinberger.Breadth = scoreBreadth(outputDir)
 	sc.Steinberger.Vision = scoreVision(outputDir)
@@ -130,7 +136,7 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 	sc.Steinberger.TypeFidelity = scoreTypeFidelity(outputDir)
 	sc.Steinberger.DeadCode = scoreDeadCode(outputDir)
 
-	// Tier 1: Infrastructure (string-matching, 130 max)
+	// Tier 1: Infrastructure (string-matching, 140 max; 130 when no MCP surface)
 	tier1Raw := sc.Steinberger.OutputModes +
 		sc.Steinberger.Auth +
 		sc.Steinberger.ErrorHandling +
@@ -139,6 +145,7 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 		sc.Steinberger.Doctor +
 		sc.Steinberger.AgentNative +
 		sc.Steinberger.MCPQuality +
+		sc.Steinberger.MCPTokenEff +
 		sc.Steinberger.LocalCache +
 		sc.Steinberger.Breadth +
 		sc.Steinberger.Vision +
@@ -160,8 +167,13 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 		sc.Steinberger.TypeFidelity +
 		sc.Steinberger.DeadCode
 
-	// Weighted composite: Tier 1 = 50%, Tier 2 = 50% of final 100-point scale
-	tier1Normalized := (tier1Raw * 50) / 130 // scale 0-130 to 0-50
+	// Weighted composite: Tier 1 = 50%, Tier 2 = 50% of final 100-point scale.
+	// Tier 1 max is 140 with MCP, 130 without (mcp_token_efficiency unscored).
+	tier1Max := 140
+	if sc.IsDimensionUnscored("mcp_token_efficiency") {
+		tier1Max = 130
+	}
+	tier1Normalized := (tier1Raw * 50) / tier1Max // scale 0-tier1Max to 0-50
 	tier2Max := 50
 	if sc.IsDimensionUnscored("path_validity") {
 		tier2Max -= 10
@@ -1985,6 +1997,7 @@ func buildGapReport(s SteinerScore, unscored []string) []string {
 		{"doctor", s.Doctor},
 		{"agent_native", s.AgentNative},
 		{"mcp_quality", s.MCPQuality},
+		{"mcp_token_efficiency", s.MCPTokenEff},
 		{"local_cache", s.LocalCache},
 		{"breadth", s.Breadth},
 		{"vision", s.Vision},
@@ -2114,6 +2127,7 @@ func writeScorecardMD(sc *Scorecard, pipelineDir string) error {
 		{"Doctor", "doctor", s.Doctor},
 		{"Agent Native", "agent_native", s.AgentNative},
 		{"MCP Quality", "mcp_quality", s.MCPQuality},
+		{"MCP Token Efficiency", "mcp_token_efficiency", s.MCPTokenEff},
 		{"Local Cache", "local_cache", s.LocalCache},
 		{"Breadth", "breadth", s.Breadth},
 		{"Vision", "vision", s.Vision},
