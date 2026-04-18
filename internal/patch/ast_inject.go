@@ -9,22 +9,42 @@ import (
 	"github.com/dave/dst/decorator"
 )
 
+// injectOptions controls which feature mutations are applied. When a feature
+// is in Skip, every mutation it owns is omitted: its rootFlags fields, its
+// imports, its flag registration, its PersistentPreRunE block, its
+// AddCommand call, and (for deliver) its post-Execute flush. This keeps the
+// patched CLI buildable when a companion drop-in is skipped due to a
+// resource-level collision.
+type injectOptions struct {
+	// Skip contains feature names: "profile", "deliver", "feedback".
+	Skip map[string]bool
+}
+
+func (o injectOptions) skip(feature string) bool {
+	return o.Skip != nil && o.Skip[feature]
+}
+
 // injectRootAST applies PR #218's root.go mutations to src and returns the
 // patched source + whether any mutation occurred. Mutations are idempotent:
 // a second call against already-patched source returns (src, false, nil).
-func injectRootAST(src []byte) ([]byte, bool, error) {
+func injectRootAST(src []byte, opts injectOptions) ([]byte, bool, error) {
 	file, err := decorator.Parse(src)
 	if err != nil {
 		return nil, false, fmt.Errorf("parse root.go: %w", err)
 	}
 
 	changed := false
-	changed = addRootFlagsFields(file) || changed
-	changed = addImports(file, "bytes", "io", "os") || changed
-	changed = addPersistentFlags(file) || changed
-	changed = addPreRunBlocks(file) || changed
-	changed = addCommands(file) || changed
-	changed = addPostExecuteFlush(file) || changed
+	changed = addRootFlagsFields(file, opts) || changed
+	// Imports (bytes/io/os) are only used by deliver's mutations.
+	if !opts.skip("deliver") {
+		changed = addImports(file, "bytes", "io", "os") || changed
+	}
+	changed = addPersistentFlags(file, opts) || changed
+	changed = addPreRunBlocks(file, opts) || changed
+	changed = addCommands(file, opts) || changed
+	if !opts.skip("deliver") {
+		changed = addPostExecuteFlush(file) || changed
+	}
 
 	if !changed {
 		return src, false, nil
@@ -38,8 +58,8 @@ func injectRootAST(src []byte) ([]byte, bool, error) {
 }
 
 // addRootFlagsFields appends profileName, deliverSpec, deliverBuf, deliverSink
-// to the rootFlags struct.
-func addRootFlagsFields(file *dst.File) bool {
+// to the rootFlags struct. Fields owned by skipped features are omitted.
+func addRootFlagsFields(file *dst.File, opts injectOptions) bool {
 	changed := false
 	dst.Inspect(file, func(n dst.Node) bool {
 		ts, ok := n.(*dst.TypeSpec)
@@ -50,31 +70,38 @@ func addRootFlagsFields(file *dst.File) bool {
 		if !ok {
 			return true
 		}
-		for _, name := range []string{"profileName", "deliverSpec"} {
-			if !structHasField(st, name) {
+		if !opts.skip("profile") && !structHasField(st, "profileName") {
+			st.Fields.List = append(st.Fields.List, &dst.Field{
+				Names: []*dst.Ident{{Name: "profileName"}},
+				Type:  &dst.Ident{Name: "string"},
+			})
+			changed = true
+		}
+		if !opts.skip("deliver") {
+			if !structHasField(st, "deliverSpec") {
 				st.Fields.List = append(st.Fields.List, &dst.Field{
-					Names: []*dst.Ident{{Name: name}},
+					Names: []*dst.Ident{{Name: "deliverSpec"}},
 					Type:  &dst.Ident{Name: "string"},
 				})
 				changed = true
 			}
-		}
-		if !structHasField(st, "deliverBuf") {
-			st.Fields.List = append(st.Fields.List, &dst.Field{
-				Names: []*dst.Ident{{Name: "deliverBuf"}},
-				Type: &dst.StarExpr{X: &dst.SelectorExpr{
-					X:   &dst.Ident{Name: "bytes"},
-					Sel: &dst.Ident{Name: "Buffer"},
-				}},
-			})
-			changed = true
-		}
-		if !structHasField(st, "deliverSink") {
-			st.Fields.List = append(st.Fields.List, &dst.Field{
-				Names: []*dst.Ident{{Name: "deliverSink"}},
-				Type:  &dst.Ident{Name: "DeliverSink"},
-			})
-			changed = true
+			if !structHasField(st, "deliverBuf") {
+				st.Fields.List = append(st.Fields.List, &dst.Field{
+					Names: []*dst.Ident{{Name: "deliverBuf"}},
+					Type: &dst.StarExpr{X: &dst.SelectorExpr{
+						X:   &dst.Ident{Name: "bytes"},
+						Sel: &dst.Ident{Name: "Buffer"},
+					}},
+				})
+				changed = true
+			}
+			if !structHasField(st, "deliverSink") {
+				st.Fields.List = append(st.Fields.List, &dst.Field{
+					Names: []*dst.Ident{{Name: "deliverSink"}},
+					Type:  &dst.Ident{Name: "DeliverSink"},
+				})
+				changed = true
+			}
 		}
 		return false
 	})
@@ -120,19 +147,43 @@ func addImports(file *dst.File, pkgs ...string) bool {
 }
 
 // addPersistentFlags inserts --profile and --deliver after the last existing
-// PersistentFlags() registration inside Execute().
-func addPersistentFlags(file *dst.File) bool {
+// PersistentFlags() registration inside Execute(). Skipped features are
+// omitted; if both profile and deliver are skipped, no flag is added.
+func addPersistentFlags(file *dst.File, opts injectOptions) bool {
 	changed := false
 	dst.Inspect(file, func(n dst.Node) bool {
 		fn, ok := n.(*dst.FuncDecl)
 		if !ok || fn.Name.Name != "Execute" {
 			return true
 		}
-		// Idempotency: skip if --profile already registered.
-		for _, stmt := range fn.Body.List {
-			if persistentFlagsRegisters(stmt, "profile") {
-				return false
+		var newStmts []dst.Stmt
+		if !opts.skip("profile") {
+			// Idempotency: skip if --profile already registered.
+			already := false
+			for _, stmt := range fn.Body.List {
+				if persistentFlagsRegisters(stmt, "profile") {
+					already = true
+					break
+				}
 			}
+			if !already {
+				newStmts = append(newStmts, parseStmt(`rootCmd.PersistentFlags().StringVar(&flags.profileName, "profile", "", "Apply values from a saved profile")`))
+			}
+		}
+		if !opts.skip("deliver") {
+			already := false
+			for _, stmt := range fn.Body.List {
+				if persistentFlagsRegisters(stmt, "deliver") {
+					already = true
+					break
+				}
+			}
+			if !already {
+				newStmts = append(newStmts, parseStmt(`rootCmd.PersistentFlags().StringVar(&flags.deliverSpec, "deliver", "", "Route output to a sink: stdout (default), file:<path>, webhook:<url>")`))
+			}
+		}
+		if len(newStmts) == 0 {
+			return false
 		}
 		lastFlagIdx := -1
 		for i, stmt := range fn.Body.List {
@@ -143,10 +194,6 @@ func addPersistentFlags(file *dst.File) bool {
 		if lastFlagIdx < 0 {
 			return false
 		}
-		newStmts := []dst.Stmt{
-			parseStmt(`rootCmd.PersistentFlags().StringVar(&flags.profileName, "profile", "", "Apply values from a saved profile")`),
-			parseStmt(`rootCmd.PersistentFlags().StringVar(&flags.deliverSpec, "deliver", "", "Route output to a sink: stdout (default), file:<path>, webhook:<url>")`),
-		}
 		fn.Body.List = append(fn.Body.List[:lastFlagIdx+1], append(newStmts, fn.Body.List[lastFlagIdx+1:]...)...)
 		changed = true
 		return false
@@ -155,8 +202,8 @@ func addPersistentFlags(file *dst.File) bool {
 }
 
 // addPreRunBlocks inserts the deliver-setup and profile-lookup blocks at the
-// top of the PersistentPreRunE function body.
-func addPreRunBlocks(file *dst.File) bool {
+// top of the PersistentPreRunE function body. Skipped features are omitted.
+func addPreRunBlocks(file *dst.File, opts injectOptions) bool {
 	changed := false
 	dst.Inspect(file, func(n dst.Node) bool {
 		assign, ok := n.(*dst.AssignStmt)
@@ -174,34 +221,38 @@ func addPreRunBlocks(file *dst.File) bool {
 		if !ok {
 			return false
 		}
-		// Idempotency: skip if deliverSpec already referenced anywhere in body.
-		if nodeReferences(fn, "deliverSpec") {
+		var prepend []dst.Stmt
+		if !opts.skip("deliver") && !nodeReferences(fn, "deliverSpec") {
+			prepend = append(prepend, parseStmt(`if flags.deliverSpec != "" {
+				sink, err := ParseDeliverSink(flags.deliverSpec)
+				if err != nil {
+					return err
+				}
+				flags.deliverSink = sink
+				if sink.Scheme != "stdout" && sink.Scheme != "" {
+					flags.deliverBuf = &bytes.Buffer{}
+					cmd.SetOut(io.MultiWriter(os.Stdout, flags.deliverBuf))
+				}
+			}`))
+		}
+		if !opts.skip("profile") && !nodeReferences(fn, "profileName") {
+			prepend = append(prepend, parseStmt(`if flags.profileName != "" {
+				profile, err := GetProfile(flags.profileName)
+				if err != nil {
+					return err
+				}
+				if profile == nil {
+					return fmt.Errorf("profile %q not found", flags.profileName)
+				}
+				if err := ApplyProfileToFlags(cmd, profile); err != nil {
+					return err
+				}
+			}`))
+		}
+		if len(prepend) == 0 {
 			return false
 		}
-		deliverBlock := parseStmt(`if flags.deliverSpec != "" {
-			sink, err := ParseDeliverSink(flags.deliverSpec)
-			if err != nil {
-				return err
-			}
-			flags.deliverSink = sink
-			if sink.Scheme != "stdout" && sink.Scheme != "" {
-				flags.deliverBuf = &bytes.Buffer{}
-				cmd.SetOut(io.MultiWriter(os.Stdout, flags.deliverBuf))
-			}
-		}`)
-		profileBlock := parseStmt(`if flags.profileName != "" {
-			profile, err := GetProfile(flags.profileName)
-			if err != nil {
-				return err
-			}
-			if profile == nil {
-				return fmt.Errorf("profile %q not found", flags.profileName)
-			}
-			if err := ApplyProfileToFlags(cmd, profile); err != nil {
-				return err
-			}
-		}`)
-		fn.Body.List = append([]dst.Stmt{deliverBlock, profileBlock}, fn.Body.List...)
+		fn.Body.List = append(prepend, fn.Body.List...)
 		changed = true
 		return false
 	})
@@ -209,18 +260,41 @@ func addPreRunBlocks(file *dst.File) bool {
 }
 
 // addCommands appends newProfileCmd and newFeedbackCmd AddCommand calls after
-// the last existing rootCmd.AddCommand entry.
-func addCommands(file *dst.File) bool {
+// the last existing rootCmd.AddCommand entry. Skipped features are omitted.
+func addCommands(file *dst.File, opts injectOptions) bool {
 	changed := false
 	dst.Inspect(file, func(n dst.Node) bool {
 		fn, ok := n.(*dst.FuncDecl)
 		if !ok || fn.Name.Name != "Execute" {
 			return true
 		}
-		for _, stmt := range fn.Body.List {
-			if rootAddsCommand(stmt, "newProfileCmd") {
-				return false
+		var newStmts []dst.Stmt
+		if !opts.skip("profile") {
+			already := false
+			for _, stmt := range fn.Body.List {
+				if rootAddsCommand(stmt, "newProfileCmd") {
+					already = true
+					break
+				}
 			}
+			if !already {
+				newStmts = append(newStmts, parseStmt(`rootCmd.AddCommand(newProfileCmd(&flags))`))
+			}
+		}
+		if !opts.skip("feedback") {
+			already := false
+			for _, stmt := range fn.Body.List {
+				if rootAddsCommand(stmt, "newFeedbackCmd") {
+					already = true
+					break
+				}
+			}
+			if !already {
+				newStmts = append(newStmts, parseStmt(`rootCmd.AddCommand(newFeedbackCmd(&flags))`))
+			}
+		}
+		if len(newStmts) == 0 {
+			return false
 		}
 		lastAddIdx := -1
 		for i, stmt := range fn.Body.List {
@@ -230,10 +304,6 @@ func addCommands(file *dst.File) bool {
 		}
 		if lastAddIdx < 0 {
 			return false
-		}
-		newStmts := []dst.Stmt{
-			parseStmt(`rootCmd.AddCommand(newProfileCmd(&flags))`),
-			parseStmt(`rootCmd.AddCommand(newFeedbackCmd(&flags))`),
 		}
 		fn.Body.List = append(fn.Body.List[:lastAddIdx+1], append(newStmts, fn.Body.List[lastAddIdx+1:]...)...)
 		changed = true

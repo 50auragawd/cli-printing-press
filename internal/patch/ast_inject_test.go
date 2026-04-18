@@ -58,7 +58,7 @@ func Execute() error {
 `
 
 func TestInjectRootAST_MutatesAllSixTargets(t *testing.T) {
-	out, changed, err := injectRootAST([]byte(baseRootGo))
+	out, changed, err := injectRootAST([]byte(baseRootGo), injectOptions{})
 	require.NoError(t, err)
 	require.True(t, changed, "expected mutation")
 	src := string(out)
@@ -87,7 +87,7 @@ func TestInjectRootAST_MutatesAllSixTargets(t *testing.T) {
 }
 
 func TestInjectRootAST_PreservesNovelCommands(t *testing.T) {
-	out, _, err := injectRootAST([]byte(baseRootGo))
+	out, _, err := injectRootAST([]byte(baseRootGo), injectOptions{})
 	require.NoError(t, err)
 	src := string(out)
 
@@ -109,24 +109,44 @@ func TestInjectRootAST_PreservesNovelCommands(t *testing.T) {
 }
 
 func TestInjectRootAST_Idempotent(t *testing.T) {
-	first, changed, err := injectRootAST([]byte(baseRootGo))
+	first, changed, err := injectRootAST([]byte(baseRootGo), injectOptions{})
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	second, changedAgain, err := injectRootAST(first)
+	second, changedAgain, err := injectRootAST(first, injectOptions{})
 	require.NoError(t, err)
 	assert.False(t, changedAgain, "second run should be a no-op")
 	assert.Equal(t, string(first), string(second), "second run must not alter bytes")
 }
 
 func TestInjectRootAST_PreservesVersionAndImports(t *testing.T) {
-	out, _, err := injectRootAST([]byte(baseRootGo))
+	out, _, err := injectRootAST([]byte(baseRootGo), injectOptions{})
 	require.NoError(t, err)
 	src := string(out)
 
 	assert.Contains(t, src, `var version = "1.0.0"`, "version var must survive")
 	assert.Contains(t, src, `"github.com/example/test/internal/client"`, "module path import must survive unchanged")
 	assert.Contains(t, src, `"github.com/spf13/cobra"`, "cobra import must survive")
+}
+
+// TestInjectRootAST_SkipFeedback exercises the Pagliacci case: a spec has its
+// own feedback resource so feedback.go is not dropped in, and the AST patch
+// must skip `rootCmd.AddCommand(newFeedbackCmd(...))` to keep the build green.
+func TestInjectRootAST_SkipFeedback(t *testing.T) {
+	out, changed, err := injectRootAST([]byte(baseRootGo), injectOptions{
+		Skip: map[string]bool{"feedback": true},
+	})
+	require.NoError(t, err)
+	require.True(t, changed, "profile/deliver mutations should still fire")
+	src := string(out)
+
+	assert.NotContains(t, src, "newFeedbackCmd(&flags)",
+		"newFeedbackCmd must NOT be registered when feedback is skipped")
+	assert.Contains(t, src, "newProfileCmd(&flags)",
+		"newProfileCmd must still be registered")
+	assert.Contains(t, src, `"deliver"`, "--deliver flag must still be registered")
+	assert.Contains(t, src, `flags.deliverSpec != ""`,
+		"deliver-setup block must still be present")
 }
 
 // TestInjectRootAST_NoPersistentFlagsBlock exercises the "refuse silently"
@@ -138,7 +158,7 @@ func Execute() error {
 	return nil
 }
 `
-	out, changed, err := injectRootAST([]byte(src))
+	out, changed, err := injectRootAST([]byte(src), injectOptions{})
 	require.NoError(t, err)
 	// rootFlags struct is missing so no field mutation; no PersistentFlags
 	// call so no flag mutation; no AddCommand so no command mutation.

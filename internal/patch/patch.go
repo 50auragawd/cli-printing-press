@@ -91,7 +91,15 @@ func Patch(opts Options) (*Report, error) {
 	}
 	report.Collisions = collisions
 
-	patchedRoot, rootChanged, err := injectRootAST(rootSrc)
+	// When --force is used to proceed past a resource-level collision, also
+	// skip the AST mutations owned by the colliding feature so the resulting
+	// root.go doesn't reference a symbol the skipped drop-in would have
+	// provided.
+	skipFeatures := map[string]bool{}
+	for _, c := range fatal {
+		skipFeatures[c.Symbol] = true
+	}
+	patchedRoot, rootChanged, err := injectRootAST(rootSrc, injectOptions{Skip: skipFeatures})
 	if err != nil {
 		return nil, fmt.Errorf("AST injection: %w", err)
 	}
