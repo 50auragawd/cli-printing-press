@@ -31,7 +31,7 @@ func TestGenerateProjectsCompile(t *testing.T) {
 		// +1 for internal/cli/feedback.go (HeyGen-style in-band agent feedback channel)
 		{name: "stytch", specPath: filepath.Join("..", "..", "testdata", "stytch.yaml"), expectedFiles: 39},
 		{name: "clerk", specPath: filepath.Join("..", "..", "testdata", "clerk.yaml"), expectedFiles: 43},
-		{name: "loops", specPath: filepath.Join("..", "..", "testdata", "loops.yaml"), expectedFiles: 43},
+		{name: "loops", specPath: filepath.Join("..", "..", "testdata", "loops.yaml"), expectedFiles: 41},
 	}
 
 	for _, tt := range tests {
@@ -978,6 +978,54 @@ func TestBuildPromotedCommands(t *testing.T) {
 		require.Len(t, promoted, 1)
 		assert.Equal(t, "items", promoted[0].PromotedName)
 		assert.Equal(t, "list", promoted[0].EndpointName, "should prefer the list endpoint (no positional params)")
+	})
+
+	t.Run("single-endpoint POST resource IS promoted (e.g. login, logout, register)", func(t *testing.T) {
+		t.Parallel()
+		s := &spec.APISpec{
+			Name:    "test",
+			Version: "0.1.0",
+			BaseURL: "https://api.example.com",
+			Resources: map[string]spec.Resource{
+				"login": {
+					Endpoints: map[string]spec.Endpoint{
+						"login": {Method: "POST", Path: "/Login", Description: "Log in to account"},
+					},
+				},
+				"password-forgot": {
+					Endpoints: map[string]spec.Endpoint{
+						"forgot-password": {Method: "POST", Path: "/PasswordForgot", Description: "Request password reset email"},
+					},
+				},
+			},
+		}
+		promoted := buildPromotedCommands(s)
+		require.Len(t, promoted, 2, "both single-endpoint POST resources should promote — without this, UX becomes `<cli> login login --email …`")
+		names := map[string]bool{}
+		for _, p := range promoted {
+			names[p.PromotedName] = true
+		}
+		assert.True(t, names["login"], "POST-only login resource should promote")
+		assert.True(t, names["password-forgot"], "POST-only password-forgot resource should promote")
+	})
+
+	t.Run("multi-endpoint resource still requires GET for promotion (write-only resources stay nested)", func(t *testing.T) {
+		t.Parallel()
+		s := &spec.APISpec{
+			Name:    "test",
+			Version: "0.1.0",
+			BaseURL: "https://api.example.com",
+			Resources: map[string]spec.Resource{
+				"mutations": {
+					Endpoints: map[string]spec.Endpoint{
+						"create": {Method: "POST", Path: "/m", Description: "create"},
+						"delete": {Method: "DELETE", Path: "/m/{id}", Description: "delete"},
+					},
+				},
+			},
+		}
+		promoted := buildPromotedCommands(s)
+		assert.Empty(t, promoted, "multi-endpoint resources without a GET should not promote — picking one mutation as the 'default' is surprising")
 	})
 
 	t.Run("all built-in names are skipped", func(t *testing.T) {
