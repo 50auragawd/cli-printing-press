@@ -336,20 +336,7 @@ Maintain a lightweight state file at `$STATE_FILE` so `/printing-press-score` ca
 }
 ```
 
-**Gopls workspace noise suppression.** After the CLI is generated (end of Phase 2), write a `go.work` file inside `$CLI_WORK_DIR` so gopls sees the generated module and stops firing `UndeclaredName` / `BrokenImport` / "file is within module X which is not included in your workspace" diagnostics on CLI source files. These are false alarms — the CLI builds cleanly under `go build ./...` — but they consume attention and mask real errors. The `go.work` should declare only the CLI dir:
-
-```bash
-# Run once after Phase 2 generate completes.
-if [ ! -f "$CLI_WORK_DIR/go.work" ]; then
-  cat > "$CLI_WORK_DIR/go.work" <<'EOF'
-go 1.23
-
-use .
-EOF
-fi
-```
-
-The file is one-shot and inert — it doesn't affect `go build` or `go test` but silences gopls in the editor. Do NOT commit it when promoting to the library; remove before promote or add to the promote command's exclude list.
+Do not create a `go.work` file in `$CLI_WORK_DIR`. Generated modules must build and test as standalone modules; a mismatched workspace `go` directive can break Go 1.25+ toolchains and lefthook checks. Editor/gopls workspace noise is cosmetic and must not be traded for broken `go build` or `go test`.
 
 There are exactly three writable locations. Every file this skill produces goes to one of them:
 
@@ -1120,6 +1107,7 @@ cat > "$API_RUN_DIR/research.json" <<REOF
     ...
   ],
   "narrative": {
+    "display_name": "<Canonical prose name, exact brand casing/spaces, e.g. Product Hunt, GitHub, YouTube, Cal.com>",
     "headline": "<Bold one-sentence value prop: what makes this CLI worth using>",
     "value_prop": "<2-3 sentence expansion rendered beneath the title>",
     "auth_narrative": "<API-specific auth story; omit for simple API-key auth>",
@@ -1159,15 +1147,16 @@ For each tool, fill in what you know from the research. Stars and command_count 
 8. If no transcendence features scored >= 5/10, omit the `novel_features` field entirely.
 
 **Narrative rules** (the `narrative` object drives README headline, Quick Start, Auth, Troubleshooting, and the entire SKILL.md):
-1. `headline` is the bold one-liner rendered beneath the CLI title. Should name the differentiator, not restate the API. Good: "Every Notion feature, plus sync, search, and a local database no other Notion tool has." Bad: "A CLI for the Notion API."
-2. `value_prop` expands the headline to 2–3 sentences. Name specific novel features by command where helpful.
-3. `auth_narrative` tells the real auth story for this API (crumb handshake, cookie session, OAuth device flow). Omit for standard API-key auth where the generic branch is fine.
-4. `quickstart` is a 3–6 step flow using REAL arguments (symbols, IDs, resource names an agent can actually pass). Each step's `comment` explains *why* it runs. This replaces the generic "resource list" first-command fallback.
-5. `troubleshoots` captures API-specific failure modes (rate-limit mitigation, cookie expiry, paginated quirks). Each `fix` must be actionable — a command or a concrete setting change.
-6. `when_to_use` is SKILL-only narrative. 2–4 sentences describing the kinds of agent tasks this CLI is the right choice for. Not rendered in README.
-7. `recipes` are 3–5 worked examples rendered in SKILL.md. Each has a title, a real command, and a one-line explanation. Prefer recipes that exercise novel features. **At least one recipe must pair `--agent` with `--select`** — using dotted paths (e.g. `--select events.shortName,events.competitions.competitors.team.displayName`) when the response is deeply nested. APIs like ESPN, HubSpot, and Linear return tens of KB per call; without a `--select` recipe, agents burn context parsing verbose payloads. Pick a command known to return a large or deeply nested response and show the narrowing pattern.
-8. `trigger_phrases` are natural-language phrases a user might say that should invoke this CLI's skill. Include 3–5 domain-specific phrases (e.g. for a finance CLI: "quote AAPL", "check my portfolio", "options for TSLA") and 2 generic phrases ("use <api-name>", "run <api-name>"). Domain verbs vary — don't just template "use X" variants.
-9. All `narrative` fields are optional. Omit fields you can't populate honestly rather than emit filler. The generator falls back to generic content gracefully.
+1. `display_name` is the canonical prose name, discovered during research, with exact brand casing and spacing. This is agentic/research-owned, not slug-inferred by Go code. Good: "Product Hunt", "GitHub", "YouTube", "Cal.com". Bad: "Producthunt", "Github", "Youtube", "Cal Com". Use the slug only for binary names, directories, module paths, config paths, and env-var prefixes.
+2. `headline` is the bold one-liner rendered beneath the CLI title. Should name the differentiator, not restate the API. Good: "Every Notion feature, plus sync, search, and a local database no other Notion tool has." Bad: "A CLI for the Notion API."
+3. `value_prop` expands the headline to 2–3 sentences. Name specific novel features by command where helpful.
+4. `auth_narrative` tells the real auth story for this API (crumb handshake, cookie session, OAuth device flow). Omit for standard API-key auth where the generic branch is fine.
+5. `quickstart` is a 3–6 step flow using REAL arguments (symbols, IDs, resource names an agent can actually pass). Each step's `comment` explains *why* it runs. This replaces the generic "resource list" first-command fallback.
+6. `troubleshoots` captures API-specific failure modes (rate-limit mitigation, cookie expiry, paginated quirks). Each `fix` must be actionable — a command or a concrete setting change.
+7. `when_to_use` is SKILL-only narrative. 2–4 sentences describing the kinds of agent tasks this CLI is the right choice for. Not rendered in README.
+8. `recipes` are 3–5 worked examples rendered in SKILL.md. Each has a title, a real command, and a one-line explanation. Prefer recipes that exercise novel features. **At least one recipe must pair `--agent` with `--select`** — using dotted paths (e.g. `--select events.shortName,events.competitions.competitors.team.displayName`) when the response is deeply nested. APIs like ESPN, HubSpot, and Linear return tens of KB per call; without a `--select` recipe, agents burn context parsing verbose payloads. Pick a command known to return a large or deeply nested response and show the narrowing pattern.
+9. `trigger_phrases` are natural-language phrases a user might say that should invoke this CLI's skill. Include 3–5 domain-specific phrases (e.g. for a finance CLI: "quote AAPL", "check my portfolio", "options for TSLA") and 2 generic phrases ("use <api-name>", "run <api-name>"). Domain verbs vary — don't just template "use X" variants.
+10. All `narrative` fields are optional. Omit fields you can't populate honestly rather than emit filler. The generator falls back to generic content gracefully.
 
 Also write discovery pages if browser-sniff was used. The generator reads these from `$API_RUN_DIR/discovery/browser-sniff-report.md` (which the browser-sniff gate already writes there). No additional action needed for discovery pages -- they are already in the right location.
 
@@ -1560,7 +1549,7 @@ After building each command in Priority 1 and Priority 2, verify these 7 princip
 3. **Progressive help**: `--help` shows realistic examples with domain-specific values (not "abc123")
 4. **Actionable errors**: Error messages name the specific flag/arg that's wrong and the correct usage
 5. **Safe retries**: Mutation commands support `--dry-run`, idempotent where possible
-6. **Composability**: Exit codes are typed (0/2/3/4/5/7), output pipes to `jq` cleanly
+6. **Composability**: Exit codes are typed (0/2/3/4/5/7/10 as applicable), output pipes to `jq` cleanly
 7. **Bounded responses**: `--compact` returns only high-gravity fields, list commands have `--limit`
 
 ### Phase 3 delegation: require feature-level acceptance
@@ -1573,8 +1562,13 @@ Required in every Phase 3 delegation prompt:
    - Search/ranker: "After `<cli> goat 'brownies'`, assert at least 3 of the top 5 results contain 'brown' in their title or URL. If fewer, the extractor is broken."
    - Lookup: "After `<cli> sub buttermilk --json`, assert the parsed JSON is an array of objects with `substitute`, `ratio`, `context` fields."
    - Transform: "After `<cli> recipe get <known-url> --servings 6`, assert the output ingredient quantities differ from the `--servings 4` invocation (scaling actually ran)."
-2. **Negative tests** per filter/search command: run with a deliberately-mismatching query and assert the result set does NOT contain irrelevant items.
-3. **Structured pass/fail report** in the agent's response (raw output of each assertion, not a summary).
+2. **Absence-of-correctness tests** for every feature whose correct answer can be empty or complete:
+   - Calendar/window commands: "Given `--days N`, assert exactly N rows are returned, including zero-count days."
+   - Drift/diff commands: "Given only one snapshot or no changed values, assert the command returns `[]` rather than fabricating drift."
+   - Alert/watch commands: "Given no matching records, assert empty output plus an honest reason, not stale or unrelated data."
+3. **Negative tests** per filter/search command: run with a deliberately-mismatching query and assert the result set does NOT contain irrelevant items.
+4. **No parent-command delegation without flags.** If a parent command delegates to a leaf command's `RunE`, the parent must declare every flag the delegate accepts. Prefer group parents that show help over aliasing a parent to a child.
+5. **Structured pass/fail report** in the agent's response (raw output of each assertion, not a summary).
 
 A Phase 3 delegation that reports PASS without behavioral assertions is treated as untrusted — re-run acceptance tests before accepting the result.
 
@@ -1763,6 +1757,29 @@ A template-level check would require every possible semantic mismatch to be patt
 
 The agent can't verify runtime behavior without running commands; stick to help-text and source-based claims. For runtime-behavior claims (e.g., "returns 5 matching recipes"), Phase 5 dogfood is the right gate.
 
+## Phase 4.9: README/SKILL Correctness Audit
+
+**Runs after Phase 4.8, before Phase 5.** Phase 4.8 reviews whether the SKILL's trigger phrases and major claims match shipped behavior. Phase 4.9 reviews the two user-facing artifacts as documents: README.md and SKILL.md must not contain boilerplate that does not apply to this CLI.
+
+Use the Agent tool or review directly with this prompt contract:
+
+> Audit `$CLI_WORK_DIR/README.md` and `$CLI_WORK_DIR/SKILL.md` for factual correctness against the shipped CLI. Ground truth is `<cli> --help` recursively, `$CLI_WORK_DIR/internal/cli/*.go`, `$RESEARCH_DIR/research.json`, and the absorb manifest.
+>
+> Check:
+> - Every command, subcommand, flag, exit code, config path, and example resolves to the printed CLI.
+> - No placeholder literals remain in executable examples (`<cli>`, `<command>`, `<resource>`, `<CLI>`).
+> - Boilerplate matches the CLI shape: no CRUD/retry/create-stdin/delete/cache/auth/async-job claims unless the CLI actually implements them.
+> - Read-only CLIs say they are read-only and do not imply create/update/delete support.
+> - No-auth CLIs omit auth troubleshooting and auth exit-code claims unless the binary can raise them.
+> - Stubbed, CF-gated, or unavailable commands are disclosed where an agent decides whether to use the CLI.
+> - The SKILL has anti-triggers: common requests this CLI should not handle.
+> - Brand/display names use the canonical prose name from research, not only the slug.
+> - Marketing phrases map to real commands; invented feature names are findings.
+>
+> Return findings with file, line, severity, and fix. If both files are correct, return `PASS — README/SKILL correctness verified`.
+
+**Gate:** Any error finding is fix-before-Phase-5. Warnings may proceed only when they are explicitly explained in the acceptance report.
+
 ## Phase 4.85: Agentic Output Review
 
 **Runs after Phase 4.8, before Phase 5.** Phase 4.8 reviews SKILL.md prose against the shipped CLI. Phase 4.85 reviews the CLI's **actual command output** for plausibility — the class of bug rule-based checks can't encode:
@@ -1842,8 +1859,10 @@ Present via `AskUserQuestion`:
 
 > "Shipcheck passed. How thoroughly should I test against the live API?"
 >
-> 1. **Quick check (recommended)** — Read-only: doctor, list, sync, search, output modes.
-> 2. **Full dogfood** — Complete mechanical test matrix across every subcommand, including error paths and output fidelity. Optionally includes write-side lifecycle (create/modify/cancel) when an API key allows.
+> 1. **Full dogfood (recommended)** — Complete mechanical test matrix across every leaf subcommand, including help, happy-path, JSON parse validation, output-mode fidelity, and error paths. Includes write-side lifecycle only with an approved disposable fixture/sandbox plan.
+> 2. **Quick check** — A compromise subset when the user explicitly wants speed or full dogfood would consume unapproved real-world cost/side effects.
+
+**Recommendation rule:** Full dogfood is the default recommendation. Do not downgrade because of ordinary time cost; a few extra minutes is cheap compared with the generation run and the cost of shipping a broken CLI. Recommend Quick only when the user asks for speed or when full live testing would create unapproved real-world cost/side effects (paid credits, outbound messages, public posts, real orders, irreversible deletes, invites, bookings, charges). Potential mutation is not itself a reason to downgrade: if the user approves a test account/workspace/calendar/project or the CLI can create and clean up disposable fixtures, Full dogfood remains recommended.
 
 There is no skip option when an API key is available or the API requires no
 auth. Phase 5 auto-skips ONLY when the API requires auth AND no key is
@@ -1855,7 +1874,7 @@ is MANDATORY — the API is freely testable without any credentials. Do not
 skip testing just because no API key was detected. No-auth APIs are the
 easiest to test and the most embarrassing to ship untested.
 
-Do NOT proceed without asking. Do NOT substitute an ad-hoc smoke test.
+Do NOT proceed without asking. Do NOT substitute an ad-hoc smoke test. If some commands cannot be exercised because fixture values are missing, classify them as `BLOCKED_FIXTURE` and file/fix the machine gap; do not use that as a reason to recommend Quick.
 
 ### Step 2: Build the test matrix mechanically
 

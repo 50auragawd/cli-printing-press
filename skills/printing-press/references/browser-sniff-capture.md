@@ -471,6 +471,13 @@ SNIFF_URLS="$DISCOVERY_DIR/sniff-urls.txt"
 # For EACH target page (run this loop in foreground — do NOT use run_in_background):
 browser-use open "<target-page-url>"
 sleep 4  # Wait for initial page load API calls to complete
+
+# Early interactive-challenge check. If this finds Cloudflare/Vercel/WAF
+# challenge assets or a challenge title/body, stop the capture attempt and
+# route to the challenge-only recovery prompt below instead of burning the
+# browser-sniff time budget waiting for Playwright to auto-solve it.
+browser-use eval "var urls=performance.getEntriesByType('resource').map(e=>e.name).join('\n');var text=(document.title+' '+document.body.innerText+' '+document.documentElement.innerHTML).toLowerCase();JSON.stringify({challenge: urls.includes('/cdn-cgi/challenge-platform') || text.includes('just a moment') || text.includes('cf-turnstile') || text.includes('x-vercel-challenge') || text.includes('captcha'), title: document.title});"
+
 # Apply browser-sniff pacing delay (starting at 1s, adapts per Browser-Sniff Pacing rules above)
 browser-use scroll down  # Trigger lazy-loaded content
 sleep 1
@@ -681,6 +688,8 @@ When this happens, do not continue to Phase 2 with a challenge-page spec. Presen
 
 Only option 3 may lead to an RSS-first, official API, docs-only, or narrower-scope proposal. Record the failed capture in `$DISCOVERY_DIR/browser-sniff-report.md` if a report is written.
 
+If direct HTTP is blocked but the page does not require live page-context execution, try the lightweight replay path before proposing a resident browser runtime: Surf/Chrome-compatible HTTP with modern TLS/UA headers, uTLS-style Chrome ClientHello where available, browser-clearance cookie import plus replay, or structured HTML/SSR/RSS extraction. These are discovery and replayability aids, not permission to ship a browser sidecar transport.
+
 #### Step 2d: Cookie auth validation (authenticated browser-sniff only)
 
 **Skip this step if:** The browser-sniff was anonymous (no session transfer in Step 1d), or the API uses API key / Bearer token auth rather than cookie-based session auth.
@@ -733,6 +742,14 @@ If using agent-browser's enriched capture format instead:
 ```bash
 printing-press browser-sniff --har "$DISCOVERY_DIR/browser-sniff-capture.json" --name <api> --output "$RESEARCH_DIR/<api>-browser-sniff-spec.yaml" --analysis-output "$DISCOVERY_DIR/traffic-analysis.json"
 ```
+
+If hand-writing or repairing `$DISCOVERY_DIR/traffic-analysis.json`, inspect the canonical schema first:
+
+```bash
+printing-press schema traffic-analysis > "$DISCOVERY_DIR/traffic-analysis.schema.json"
+```
+
+Notably, confidence fields are numbers from `0` to `1`, not strings such as `"high"`.
 
 #### Step 4: Report and update spec source
 
