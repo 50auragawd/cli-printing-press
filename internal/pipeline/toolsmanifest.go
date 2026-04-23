@@ -27,6 +27,7 @@ type ToolsManifest struct {
 	BaseURL         string           `json:"base_url"`
 	Description     string           `json:"description"`
 	MCPReady        string           `json:"mcp_ready"`
+	HTTPTransport   string           `json:"http_transport,omitempty"`
 	Auth            ManifestAuth     `json:"auth"`
 	RequiredHeaders []ManifestHeader `json:"required_headers"`
 	Tools           []ManifestTool   `json:"tools"`
@@ -35,12 +36,16 @@ type ToolsManifest struct {
 // ManifestAuth captures the auth configuration needed to make authenticated
 // API requests at runtime.
 type ManifestAuth struct {
-	Type    string   `json:"type"`
-	Header  string   `json:"header,omitempty"`
-	Format  string   `json:"format,omitempty"`
-	In      string   `json:"in,omitempty"`
-	EnvVars []string `json:"env_vars,omitempty"`
-	KeyURL  string   `json:"key_url,omitempty"`
+	Type                           string   `json:"type"`
+	Header                         string   `json:"header,omitempty"`
+	Format                         string   `json:"format,omitempty"`
+	In                             string   `json:"in,omitempty"`
+	EnvVars                        []string `json:"env_vars,omitempty"`
+	KeyURL                         string   `json:"key_url,omitempty"`
+	CookieDomain                   string   `json:"cookie_domain,omitempty"`
+	RequiresBrowserSession         bool     `json:"requires_browser_session,omitempty"`
+	BrowserSessionValidationPath   string   `json:"browser_session_validation_path,omitempty"`
+	BrowserSessionValidationMethod string   `json:"browser_session_validation_method,omitempty"`
 }
 
 // ManifestTool describes a single MCP tool derived from an API endpoint.
@@ -86,17 +91,22 @@ func WriteToolsManifest(dir string, parsed *spec.APISpec) error {
 	cookieOrComposed := parsed.Auth.Type == "cookie" || parsed.Auth.Type == "composed"
 
 	manifest := ToolsManifest{
-		APIName:     parsed.Name,
-		BaseURL:     parsed.BaseURL,
-		Description: parsed.Description,
-		MCPReady:    mcpReady,
+		APIName:       parsed.Name,
+		BaseURL:       parsed.BaseURL,
+		Description:   parsed.Description,
+		MCPReady:      mcpReady,
+		HTTPTransport: parsed.EffectiveHTTPTransport(),
 		Auth: ManifestAuth{
-			Type:    parsed.Auth.Type,
-			Header:  parsed.Auth.Header,
-			Format:  normalizeAuthFormat(parsed.Auth.Format, parsed.Auth.EnvVars),
-			In:      parsed.Auth.In,
-			EnvVars: parsed.Auth.EnvVars,
-			KeyURL:  parsed.Auth.KeyURL,
+			Type:                           parsed.Auth.Type,
+			Header:                         parsed.Auth.Header,
+			Format:                         normalizeAuthFormat(parsed.Auth.Format, parsed.Auth.EnvVars),
+			In:                             parsed.Auth.In,
+			EnvVars:                        parsed.Auth.EnvVars,
+			KeyURL:                         parsed.Auth.KeyURL,
+			CookieDomain:                   parsed.Auth.CookieDomain,
+			RequiresBrowserSession:         parsed.Auth.RequiresBrowserSession,
+			BrowserSessionValidationPath:   parsed.Auth.BrowserSessionValidationPath,
+			BrowserSessionValidationMethod: parsed.Auth.BrowserSessionValidationMethod,
 		},
 		RequiredHeaders: make([]ManifestHeader, 0, len(parsed.RequiredHeaders)),
 		Tools:           make([]ManifestTool, 0),

@@ -40,9 +40,10 @@ func isInternalYAMLSpec(data []byte) bool {
 // openAPISpec struct used by dogfood/verify.
 func internalSpecToDogfoodSpec(s *apispec.APISpec) *openAPISpec {
 	return &openAPISpec{
-		Paths: collectInternalSpecPaths(s),
-		Auth:  s.Auth,
-		Kind:  s.Kind,
+		Paths:         collectInternalSpecPaths(s),
+		Auth:          s.Auth,
+		Kind:          s.Kind,
+		HTTPTransport: s.EffectiveHTTPTransport(),
 	}
 }
 

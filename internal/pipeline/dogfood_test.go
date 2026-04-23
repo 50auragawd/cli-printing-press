@@ -53,6 +53,12 @@ func projectsGet() {
 	path := "/bogus"
 }
 `)
+	writeTestFile(t, filepath.Join(dir, "internal", "cli", "export.go"), `package cli
+func exportResource(resource string) {
+	path := "/" + resource
+	_ = path
+}
+`)
 	writeTestFile(t, filepath.Join(dir, "internal", "cli", "sync.go"), `package cli
 func runSync(s interface{ UpsertUsers() error }) error {
 	return s.UpsertUsers()
@@ -1234,6 +1240,44 @@ func TestDeriveDogfoodVerdict_PassesWithOnlyThinTests(t *testing.T) {
 		ThinTests: []string{"recipes (1 test funcs)"},
 	}
 	assert.Equal(t, "PASS", deriveDogfoodVerdict(report, false))
+}
+
+func TestDogfoodExampleCommandPathsFromAgentContext(t *testing.T) {
+	payload := []byte(`{
+		"commands": [
+			{"name": "posts", "subcommands": [
+				{"name": "daily-feed"},
+				{"name": "launch_details"}
+			]},
+			{"name": "auth", "subcommands": [
+				{"name": "login"}
+			]},
+			{"name": "completion", "subcommands": [
+				{"name": "bash"}
+			]},
+			{"name": "feedback", "subcommands": [
+				{"name": "list"}
+			]},
+			{"name": "profile", "subcommands": [
+				{"name": "save"},
+				{"name": "use"},
+				{"name": "list"},
+				{"name": "show"},
+				{"name": "delete"}
+			]},
+			{"name": "sync"},
+			{"name": "version"},
+			{"name": "what_i_missed"}
+		]
+	}`)
+
+	paths, err := dogfoodExampleCommandPathsFromAgentContext(payload)
+	require.NoError(t, err)
+	assert.Equal(t, [][]string{
+		{"posts", "daily-feed"},
+		{"posts", "launch_details"},
+		{"what_i_missed"},
+	}, paths)
 }
 
 // passingDogfoodReport returns a DogfoodReport populated with the minimum

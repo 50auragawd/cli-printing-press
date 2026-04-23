@@ -24,6 +24,7 @@ type DogfoodReport struct {
 	Verdict               string                      `json:"verdict"`
 	PathCheck             PathCheckResult             `json:"path_check"`
 	AuthCheck             AuthCheckResult             `json:"auth_check"`
+	BrowserSessionCheck   BrowserSessionCheckResult   `json:"browser_session_check"`
 	DeadFlags             DeadCodeResult              `json:"dead_flags"`
 	DeadFuncs             DeadCodeResult              `json:"dead_functions"`
 	PipelineCheck         PipelineResult              `json:"pipeline_check"`
@@ -98,6 +99,16 @@ type AuthCheckResult struct {
 	Detail       string `json:"detail"`
 }
 
+type BrowserSessionCheckResult struct {
+	Required              bool   `json:"required"`
+	HasAuthLoginChrome    bool   `json:"has_auth_login_chrome,omitempty"`
+	HasProofWriter        bool   `json:"has_proof_writer,omitempty"`
+	HasDoctorProofCheck   bool   `json:"has_doctor_proof_check,omitempty"`
+	HasValidationEndpoint bool   `json:"has_validation_endpoint,omitempty"`
+	Pass                  bool   `json:"pass"`
+	Detail                string `json:"detail,omitempty"`
+}
+
 type DeadCodeResult struct {
 	Total int      `json:"total"`
 	Dead  int      `json:"dead"`
@@ -119,6 +130,15 @@ type ExampleCheckResult struct {
 	Missing       []string `json:"missing,omitempty"`
 	Skipped       bool     `json:"skipped,omitempty"`
 	Detail        string   `json:"detail"`
+}
+
+type dogfoodAgentContext struct {
+	Commands []dogfoodAgentCommand `json:"commands"`
+}
+
+type dogfoodAgentCommand struct {
+	Name        string                `json:"name"`
+	Subcommands []dogfoodAgentCommand `json:"subcommands,omitempty"`
 }
 
 type WiringCheckResult struct {
@@ -149,9 +169,10 @@ type WorkflowCompleteResult struct {
 }
 
 type openAPISpec struct {
-	Paths []string
-	Auth  apispec.AuthConfig
-	Kind  string // see apispec.KindREST / apispec.KindSynthetic
+	Paths         []string
+	Auth          apispec.AuthConfig
+	Kind          string // see apispec.KindREST / apispec.KindSynthetic
+	HTTPTransport string
 }
 
 func (s *openAPISpec) IsSynthetic() bool {
@@ -190,10 +211,15 @@ func RunDogfood(dir, specPath string, opts ...DogfoodOption) (*DogfoodReport, er
 			report.PathCheck = checkPaths(dir, spec.Paths)
 		}
 		report.AuthCheck = checkAuth(dir, spec.Auth)
+		report.BrowserSessionCheck = checkBrowserSessionAuth(dir, spec.Auth)
 	} else {
 		report.AuthCheck = AuthCheckResult{
 			Match:  true,
 			Detail: "spec not provided; auth protocol check skipped",
+		}
+		report.BrowserSessionCheck = BrowserSessionCheckResult{
+			Pass:   true,
+			Detail: "spec not provided; browser-session auth check skipped",
 		}
 	}
 
@@ -687,6 +713,9 @@ func checkPaths(dir string, paths []string) PathCheckResult {
 		matches := pathAssignmentRe.FindAllStringSubmatch(string(content), -1)
 		for _, match := range matches {
 			path := match[1]
+			if path == "/" {
+				continue
+			}
 			result.Tested++
 			if pathMatchesSpec(path, specPatterns) {
 				result.Valid++
@@ -753,6 +782,49 @@ func checkAuth(dir string, auth apispec.AuthConfig) AuthCheckResult {
 		result.Detail = fmt.Sprintf(`spec and generated client both use %q`, strings.TrimSpace(expectedPrefix))
 	} else {
 		result.Detail = fmt.Sprintf(`spec expects %q but generated client uses %q`, strings.TrimSpace(expectedPrefix), strings.TrimSpace(result.GeneratedFmt))
+	}
+	return result
+}
+
+func checkBrowserSessionAuth(dir string, auth apispec.AuthConfig) BrowserSessionCheckResult {
+	if !auth.RequiresBrowserSession {
+		return BrowserSessionCheckResult{
+			Pass:   true,
+			Detail: "browser-session auth not required",
+		}
+	}
+
+	authData, _ := os.ReadFile(filepath.Join(dir, "internal", "cli", "auth.go"))
+	doctorData, _ := os.ReadFile(filepath.Join(dir, "internal", "cli", "doctor.go"))
+
+	result := BrowserSessionCheckResult{
+		Required:              true,
+		HasAuthLoginChrome:    strings.Contains(string(authData), "auth login --chrome") || strings.Contains(string(authData), `"chrome"`),
+		HasProofWriter:        strings.Contains(string(authData), "browser-session-proof.json"),
+		HasDoctorProofCheck:   strings.Contains(string(doctorData), "browser_session_proof"),
+		HasValidationEndpoint: strings.TrimSpace(auth.BrowserSessionValidationPath) != "",
+	}
+	result.Pass = result.HasAuthLoginChrome &&
+		result.HasProofWriter &&
+		result.HasDoctorProofCheck &&
+		result.HasValidationEndpoint
+	if result.Pass {
+		result.Detail = "browser-session auth has login, proof, doctor, and validation endpoint wiring"
+	} else {
+		var missing []string
+		if !result.HasAuthLoginChrome {
+			missing = append(missing, "auth login --chrome")
+		}
+		if !result.HasProofWriter {
+			missing = append(missing, "proof writer")
+		}
+		if !result.HasDoctorProofCheck {
+			missing = append(missing, "doctor proof check")
+		}
+		if !result.HasValidationEndpoint {
+			missing = append(missing, "validation endpoint metadata")
+		}
+		result.Detail = "missing " + strings.Join(missing, ", ")
 	}
 	return result
 }
@@ -1200,6 +1272,9 @@ func deriveDogfoodVerdict(report *DogfoodReport, hasSpec bool) string {
 	if hasSpec && !report.AuthCheck.Match {
 		return "FAIL"
 	}
+	if hasSpec && report.BrowserSessionCheck.Required && !report.BrowserSessionCheck.Pass {
+		return "FAIL"
+	}
 	if report.DeadFlags.Dead >= 3 {
 		return "FAIL"
 	}
@@ -1259,6 +1334,9 @@ func collectDogfoodIssues(report *DogfoodReport, hasSpec bool) []string {
 	}
 	if hasSpec && !report.AuthCheck.Match {
 		issues = append(issues, "auth protocol mismatch")
+	}
+	if hasSpec && report.BrowserSessionCheck.Required && !report.BrowserSessionCheck.Pass {
+		issues = append(issues, "browser-session auth proof wiring incomplete: "+report.BrowserSessionCheck.Detail)
 	}
 	if report.DeadFlags.Dead >= 3 {
 		issues = append(issues, fmt.Sprintf("%d dead flags found", report.DeadFlags.Dead))
@@ -1357,39 +1435,18 @@ func checkExamples(dir string) ExampleCheckResult {
 	}
 	globalFlags := extractFlagNames(globalOut)
 
-	// List command files (same filtering as PathCheck)
-	cliDir := filepath.Join(dir, "internal", "cli")
-	files := listGoFiles(cliDir)
-	var endpointFiles []string
-	for _, file := range files {
-		base := filepath.Base(file)
-		switch base {
-		case "root.go", "helpers.go", "doctor.go", "auth.go", "dogfood.go", "scorecard.go", "vision.go":
-			continue
-		}
-		// Only include endpoint commands (those with RunE)
-		content, err := os.ReadFile(file)
-		if err != nil {
-			continue
-		}
-		if !strings.Contains(string(content), "RunE:") {
-			continue
-		}
-		endpointFiles = append(endpointFiles, file)
-	}
-	sort.Strings(endpointFiles)
-	if len(endpointFiles) > 10 {
-		endpointFiles = sampleEvenly(endpointFiles, 10)
+	commandPaths, err := discoverExampleCheckCommands(binaryPath)
+	if err != nil {
+		result.Skipped = true
+		result.Detail = fmt.Sprintf("could not discover command tree from agent-context: %v", err)
+		return result
 	}
 
-	for _, file := range endpointFiles {
-		base := strings.TrimSuffix(filepath.Base(file), ".go")
-		parts := strings.Split(base, "_")
-
+	for _, parts := range commandPaths {
 		result.Tested++
 		cmdLabel := strings.Join(parts, " ")
 
-		cmdArgs := append(parts, "--help")
+		cmdArgs := append(append([]string{}, parts...), "--help")
 		cmdOut, err := runDogfoodCmd(binaryPath, 15*time.Second, cmdArgs...)
 		if err != nil {
 			result.Missing = append(result.Missing, cmdLabel)
@@ -1440,6 +1497,85 @@ func checkExamples(dir string) ExampleCheckResult {
 		}
 	}
 
+	return result
+}
+
+func discoverExampleCheckCommands(binaryPath string) ([][]string, error) {
+	out, err := runDogfoodCmd(binaryPath, 15*time.Second, "agent-context")
+	if err != nil {
+		return nil, err
+	}
+	paths, err := dogfoodExampleCommandPathsFromAgentContext([]byte(out))
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) > 10 {
+		paths = sampleEvenlyCommandPaths(paths, 10)
+	}
+	return paths, nil
+}
+
+func dogfoodExampleCommandPathsFromAgentContext(data []byte) ([][]string, error) {
+	var ctx dogfoodAgentContext
+	if err := json.Unmarshal(data, &ctx); err != nil {
+		return nil, err
+	}
+	var paths [][]string
+	for _, command := range ctx.Commands {
+		collectDogfoodExampleCommandPaths(nil, command, &paths)
+	}
+	sort.Slice(paths, func(i, j int) bool {
+		return strings.Join(paths[i], " ") < strings.Join(paths[j], " ")
+	})
+	return paths, nil
+}
+
+var dogfoodExampleCommandSkip = map[string]bool{
+	"agent-context": true,
+	"api":           true,
+	"auth":          true,
+	"analytics":     true,
+	"completion":    true,
+	"doctor":        true,
+	"export":        true,
+	"feedback":      true,
+	"help":          true,
+	"import":        true,
+	"jobs":          true,
+	"profile":       true,
+	"search":        true,
+	"share":         true,
+	"sync":          true,
+	"tail":          true,
+	"version":       true,
+	"workflow":      true,
+}
+
+func collectDogfoodExampleCommandPaths(prefix []string, command dogfoodAgentCommand, paths *[][]string) {
+	if command.Name == "" || dogfoodExampleCommandSkip[command.Name] {
+		return
+	}
+
+	next := append(append([]string{}, prefix...), command.Name)
+	if len(command.Subcommands) == 0 {
+		*paths = append(*paths, next)
+		return
+	}
+	for _, sub := range command.Subcommands {
+		collectDogfoodExampleCommandPaths(next, sub, paths)
+	}
+}
+
+func sampleEvenlyCommandPaths(items [][]string, n int) [][]string {
+	if len(items) <= n {
+		return items
+	}
+	step := float64(len(items)) / float64(n)
+	result := make([][]string, n)
+	for i := 0; i < n; i++ {
+		idx := int(float64(i) * step)
+		result[i] = items[idx]
+	}
 	return result
 }
 
@@ -1525,19 +1661,6 @@ func extractFlagNames(text string) []string {
 	}
 	sort.Strings(flags)
 	return flags
-}
-
-func sampleEvenly(items []string, n int) []string {
-	if len(items) <= n {
-		return items
-	}
-	step := float64(len(items)) / float64(n)
-	result := make([]string, n)
-	for i := 0; i < n; i++ {
-		idx := int(float64(i) * step)
-		result[i] = items[idx]
-	}
-	return result
 }
 
 func compileSpecPathPatterns(paths []string) []*regexp.Regexp {

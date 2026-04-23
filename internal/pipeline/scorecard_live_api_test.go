@@ -68,6 +68,66 @@ func TestScoreLiveAPIVerification(t *testing.T) {
 	})
 }
 
+func TestScoreLiveAPIVerificationFromLiveCheck(t *testing.T) {
+	tests := []struct {
+		name       string
+		live       *LiveCheckResult
+		wantScore  int
+		wantScored bool
+	}{
+		{name: "nil", live: nil, wantScored: false},
+		{name: "unable", live: &LiveCheckResult{Unable: true}, wantScored: false},
+		{name: "zero checked", live: &LiveCheckResult{}, wantScored: false},
+		{name: "three pass scores ten", live: &LiveCheckResult{Passed: 3, Failed: 2}, wantScore: 10, wantScored: true},
+		{name: "two pass scores five", live: &LiveCheckResult{Passed: 2, Failed: 3}, wantScore: 5, wantScored: true},
+		{name: "one pass scores five", live: &LiveCheckResult{Passed: 1, Failed: 4}, wantScore: 5, wantScored: true},
+		{name: "zero pass scored zero", live: &LiveCheckResult{Failed: 5}, wantScore: 0, wantScored: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			score, scored := scoreLiveAPIVerificationFromLiveCheck(tt.live)
+			assert.Equal(t, tt.wantScore, score)
+			assert.Equal(t, tt.wantScored, scored)
+		})
+	}
+}
+
+func TestApplyLiveCheckToScorecardCreditsLiveAPIVerification(t *testing.T) {
+	dir := t.TempDir()
+	pipelineDir := t.TempDir()
+	sc, err := RunScorecard(dir, pipelineDir, "", nil)
+	assert.NoError(t, err)
+	assert.Contains(t, sc.UnscoredDimensions, "live_api_verification")
+	beforeTotal := sc.Steinberger.Total
+
+	ApplyLiveCheckToScorecard(sc, &LiveCheckResult{Passed: 3, Failed: 2})
+
+	assert.NotContains(t, sc.UnscoredDimensions, "live_api_verification")
+	assert.Equal(t, 10, sc.Steinberger.LiveAPIVerification)
+	assert.GreaterOrEqual(t, sc.Steinberger.Total, beforeTotal)
+	assert.Equal(t, sc.Steinberger.Total, sc.Steinberger.Percentage)
+}
+
+func TestApplyLiveCheckToScorecardPreservesBrowserSessionCap(t *testing.T) {
+	dir := t.TempDir()
+	pipelineDir := t.TempDir()
+	verify := &VerifyReport{
+		Mode:                   "live",
+		PassRate:               100,
+		BrowserSessionRequired: true,
+		BrowserSessionProof:    "missing",
+	}
+	sc, err := RunScorecard(dir, pipelineDir, "", verify)
+	assert.NoError(t, err)
+	assert.LessOrEqual(t, sc.Steinberger.Total, 69)
+
+	ApplyLiveCheckToScorecard(sc, &LiveCheckResult{Passed: 3})
+
+	assert.LessOrEqual(t, sc.Steinberger.Total, 69)
+	assert.Equal(t, sc.Steinberger.Total, sc.Steinberger.Percentage)
+	assert.Contains(t, sc.Steinberger.CalibrationNote, "browser-session auth was not verified")
+}
+
 // Verify the scorecard wires LiveAPIVerification correctly end-to-end:
 // when a live VerifyReport is passed in, the dimension is populated and
 // is NOT in UnscoredDimensions; when the report is nil the dimension is

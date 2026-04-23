@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/mvanhorn/cli-printing-press/internal/artifacts"
 	"github.com/mvanhorn/cli-printing-press/internal/naming"
+	apispec "github.com/mvanhorn/cli-printing-press/internal/spec"
 )
 
 // VerifyConfig configures a runtime verification run.
@@ -29,17 +31,20 @@ type VerifyConfig struct {
 
 // VerifyReport is the output of a runtime verification run.
 type VerifyReport struct {
-	Mode               string          `json:"mode"` // "live" or "mock"
-	Total              int             `json:"total"`
-	Passed             int             `json:"passed"`
-	Failed             int             `json:"failed"`
-	Critical           int             `json:"critical"`
-	PassRate           float64         `json:"pass_rate"`
-	DataPipeline       bool            `json:"data_pipeline"`
-	DataPipelineDetail string          `json:"data_pipeline_detail,omitempty"` // PASS, WARN, SKIP, FAIL with context
-	Verdict            string          `json:"verdict"`                        // PASS, WARN, FAIL
-	Results            []CommandResult `json:"results"`
-	Binary             string          `json:"binary"`
+	Mode                   string          `json:"mode"` // "live" or "mock"
+	Total                  int             `json:"total"`
+	Passed                 int             `json:"passed"`
+	Failed                 int             `json:"failed"`
+	Critical               int             `json:"critical"`
+	PassRate               float64         `json:"pass_rate"`
+	DataPipeline           bool            `json:"data_pipeline"`
+	DataPipelineDetail     string          `json:"data_pipeline_detail,omitempty"` // PASS, WARN, SKIP, FAIL with context
+	BrowserSessionRequired bool            `json:"browser_session_required,omitempty"`
+	BrowserSessionProof    string          `json:"browser_session_proof,omitempty"`
+	BrowserSessionDetail   string          `json:"browser_session_detail,omitempty"`
+	Verdict                string          `json:"verdict"` // PASS, WARN, FAIL
+	Results                []CommandResult `json:"results"`
+	Binary                 string          `json:"binary"`
 }
 
 // CommandResult is the test result for a single command.
@@ -187,6 +192,18 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 	// 8. Data pipeline test
 	report.DataPipeline, report.DataPipelineDetail = runDataPipelineTest(binaryPath, report.Mode, buildEnv)
 
+	if spec != nil && spec.Auth.RequiresBrowserSession {
+		report.BrowserSessionRequired = true
+		browserProof := runBrowserSessionProofTest(binaryPath, spec.Auth)
+		report.Results = append(report.Results, browserProof)
+		if browserProof.Score >= 2 {
+			report.BrowserSessionProof = "valid"
+		} else {
+			report.BrowserSessionProof = "missing-or-invalid"
+			report.BrowserSessionDetail = browserProof.Error
+		}
+	}
+
 	// 9. Compute aggregate
 	for _, r := range report.Results {
 		report.Total++
@@ -210,6 +227,9 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 	case report.PassRate >= 60 && report.Critical <= 3:
 		report.Verdict = "WARN"
 	default:
+		report.Verdict = "FAIL"
+	}
+	if report.BrowserSessionRequired && report.BrowserSessionProof != "valid" {
 		report.Verdict = "FAIL"
 	}
 
@@ -789,6 +809,50 @@ func runCommandTests(binary string, cmd discoveredCommand, mode string, env []st
 	}
 	result.Score = score
 
+	return result
+}
+
+func runBrowserSessionProofTest(binary string, auth apispec.AuthConfig) CommandResult {
+	result := CommandResult{
+		Command: "browser-session-proof",
+		Kind:    "auth",
+		Help:    true,
+		DryRun:  true,
+	}
+
+	if strings.TrimSpace(auth.BrowserSessionValidationPath) == "" {
+		result.Error = "required browser-session auth has no validation endpoint metadata"
+		result.Score = 0
+		return result
+	}
+
+	output, err := runCLIWithOutput(binary, []string{"doctor", "--json"}, os.Environ(), 20*time.Second)
+	if err != nil {
+		result.Error = fmt.Sprintf("doctor --json failed: %v", err)
+		result.Score = 0
+		return result
+	}
+
+	var report map[string]any
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		result.Error = "doctor --json did not return valid JSON"
+		result.Score = 0
+		return result
+	}
+
+	proof, _ := report["browser_session_proof"].(string)
+	if proof != "valid" {
+		detail, _ := report["browser_session_proof_detail"].(string)
+		if detail == "" {
+			detail = "run auth login --chrome to create a browser-session proof"
+		}
+		result.Error = detail
+		result.Score = 0
+		return result
+	}
+
+	result.Execute = true
+	result.Score = 3
 	return result
 }
 

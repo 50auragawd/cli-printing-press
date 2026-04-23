@@ -913,6 +913,71 @@ func collectCacheReport() {}`)
 	})
 }
 
+func TestScoreDoctorDetectsHTTPClientReachability(t *testing.T) {
+	t.Run("scores named http client get", func(t *testing.T) {
+		dir := t.TempDir()
+		writeScorecardFixture(t, dir, "internal/cli/doctor.go", `package cli
+
+import (
+	"net/http"
+	"time"
+)
+
+func newDoctorCmd() {}
+
+func doctorCheckBrowserCDP(cdpURL string) error {
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := httpClient.Get(cdpURL + "/json/version")
+	_ = resp
+	return err
+}
+
+func doctorReport() {
+	_ = "auth token config version"
+}
+`)
+
+		assert.Equal(t, 10, scoreDoctor(dir))
+	})
+
+	t.Run("scores inline http client get", func(t *testing.T) {
+		dir := t.TempDir()
+		writeScorecardFixture(t, dir, "internal/cli/doctor.go", `package cli
+
+import (
+	"net/http"
+	"time"
+)
+
+func newDoctorCmd() {}
+
+func doctorCheck() {
+	_, _ = (&http.Client{Timeout: 5 * time.Second}).Get("https://example.com/health")
+	_ = "auth token config version"
+}
+`)
+
+		assert.Equal(t, 10, scoreDoctor(dir))
+	})
+
+	t.Run("does not score exec curl as HTTP reachability", func(t *testing.T) {
+		dir := t.TempDir()
+		writeScorecardFixture(t, dir, "internal/cli/doctor.go", `package cli
+
+import "os/exec"
+
+func newDoctorCmd() {}
+
+func doctorCheck() {
+	_ = exec.Command("curl", "https://example.com/health")
+	_ = "auth token config version"
+}
+`)
+
+		assert.Equal(t, 8, scoreDoctor(dir))
+	})
+}
+
 func TestScoreWorkflows(t *testing.T) {
 	t.Run("counts files matching expanded prefixes", func(t *testing.T) {
 		dir := t.TempDir()

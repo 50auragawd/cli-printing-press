@@ -114,10 +114,12 @@ type LiveCheckOptions struct {
 	Concurrency int
 }
 
-// RunLiveCheck samples each novel feature's Example command against the real
-// CLI. Returns an Unable=true result (not an error) when research.json or the
-// binary is missing — the scorecard treats those as "could not run" rather
-// than failure, so an absent check doesn't penalize the CLI.
+// RunLiveCheck samples novel feature Example commands against the real CLI.
+// When novel features are absent, it falls back to generated leaf commands
+// discovered from agent-context. Returns an Unable=true result (not an error)
+// when research.json, the binary, or any sampleable command is missing — the
+// scorecard treats those as "could not run" rather than failure, so an absent
+// check doesn't penalize the CLI.
 func RunLiveCheck(opts LiveCheckOptions) *LiveCheckResult {
 	out := &LiveCheckResult{RanAt: time.Now().UTC()}
 
@@ -134,18 +136,26 @@ func RunLiveCheck(opts LiveCheckOptions) *LiveCheckResult {
 		return out
 	}
 
-	features := pickFeatures(research)
-	if len(features) == 0 {
-		out.Unable = true
-		out.Reason = "no novel features with Example commands to sample"
-		return out
-	}
-
 	binaryPath, binErr := resolveBinaryPath(opts.CLIDir, opts.BinaryName)
 	if binErr != nil {
 		out.Unable = true
 		out.Reason = binErr.Error()
 		return out
+	}
+	features := pickFeatures(research)
+	if len(features) == 0 {
+		var fallbackErr error
+		features, fallbackErr = pickGeneratedCommandFeatures(binaryPath)
+		if fallbackErr != nil {
+			out.Unable = true
+			out.Reason = "no novel features with Example commands and no generated command fallback: " + fallbackErr.Error()
+			return out
+		}
+		if len(features) == 0 {
+			out.Unable = true
+			out.Reason = "no novel features with Example commands and no generated command leaves to sample"
+			return out
+		}
 	}
 
 	timeout := opts.Timeout
@@ -246,6 +256,32 @@ func pickFeatures(r *ResearchResult) []NovelFeature {
 		}
 	}
 	return out
+}
+
+func pickGeneratedCommandFeatures(binaryPath string) ([]NovelFeature, error) {
+	out, err := runDogfoodCmd(binaryPath, 15*time.Second, "agent-context")
+	if err != nil {
+		return nil, err
+	}
+	paths, err := dogfoodExampleCommandPathsFromAgentContext([]byte(out))
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) > 5 {
+		paths = sampleEvenlyCommandPaths(paths, 5)
+	}
+	binaryName := filepath.Base(binaryPath)
+	features := make([]NovelFeature, 0, len(paths))
+	for _, path := range paths {
+		command := strings.Join(path, " ")
+		features = append(features, NovelFeature{
+			Name:        command,
+			Command:     command,
+			Description: "Generated command " + command,
+			Example:     binaryName + " " + command + " --json",
+		})
+	}
+	return features, nil
 }
 
 // runOneFeatureCheck parses the Example invocation, runs it against the real
@@ -488,10 +524,22 @@ func extractQueryToken(args []string) string {
 	if looksLikeURLOrID(candidate) {
 		return ""
 	}
+	if commonCommandVerb(candidate) {
+		return ""
+	}
 	if len(candidate) < 3 {
 		return ""
 	}
 	return candidate
+}
+
+func commonCommandVerb(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "list", "get", "show", "fetch", "query", "search", "create", "update", "delete", "remove", "set", "run":
+		return true
+	default:
+		return false
+	}
 }
 
 // looksLikeURLOrID returns true for tokens that shouldn't be used as search-

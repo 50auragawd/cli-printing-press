@@ -153,6 +153,13 @@ func printVerifyReport(report *pipeline.VerifyReport) {
 	} else {
 		fmt.Printf("Data Pipeline: %s\n", passFail(report.DataPipeline))
 	}
+	if report.BrowserSessionRequired {
+		fmt.Printf("Browser Session Proof: %s", report.BrowserSessionProof)
+		if report.BrowserSessionDetail != "" {
+			fmt.Printf(" (%s)", report.BrowserSessionDetail)
+		}
+		fmt.Println()
+	}
 	fmt.Printf("Pass Rate: %.0f%% (%d/%d passed, %d critical)\n",
 		report.PassRate, report.Passed, report.Total, report.Critical)
 	fmt.Printf("Verdict: %s\n", report.Verdict)

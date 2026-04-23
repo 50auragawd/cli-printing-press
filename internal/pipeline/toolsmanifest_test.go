@@ -416,6 +416,7 @@ func TestWriteToolsManifest_RoundTrip(t *testing.T) {
 		RequiredHeaders: []spec.RequiredHeader{
 			{Name: "X-Version", Value: "2"},
 		},
+		HTTPTransport: spec.HTTPTransportBrowserChromeH3,
 		Resources: map[string]spec.Resource{
 			"Items": {
 				Endpoints: map[string]spec.Endpoint{
@@ -455,6 +456,7 @@ func TestWriteToolsManifest_RoundTrip(t *testing.T) {
 	assert.Equal(t, "https://api.roundtrip.com", got.BaseURL)
 	assert.Equal(t, "A test API for round-trip verification", got.Description)
 	assert.Equal(t, "full", got.MCPReady) // bearer_token → full
+	assert.Equal(t, spec.HTTPTransportBrowserChromeH3, got.HTTPTransport)
 	assert.Equal(t, "bearer_token", got.Auth.Type)
 	assert.Equal(t, "Authorization", got.Auth.Header)
 	assert.Equal(t, "Bearer {RT_TOKEN}", got.Auth.Format)

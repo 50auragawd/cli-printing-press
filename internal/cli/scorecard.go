@@ -55,6 +55,7 @@ func newScorecardCmd() *cobra.Command {
 				if insightCap := pipeline.InsightCapFromLiveCheck(live); insightCap != nil && sc.Steinberger.Insight > *insightCap {
 					sc.Steinberger.Insight = *insightCap
 				}
+				pipeline.ApplyLiveCheckToScorecard(sc, live)
 			}
 
 			if asJSON {

@@ -61,6 +61,36 @@ func TestLiveCheck_UnableWhenNoExamples(t *testing.T) {
 	require.Contains(t, result.Reason, "Example")
 }
 
+func TestLiveCheck_FallsBackToGeneratedCommandTree(t *testing.T) {
+	dir := t.TempDir()
+	writeStubBinary(t, dir, "stub", `
+if [ "$1" = "agent-context" ]; then
+  cat <<'JSON'
+{"commands":[
+  {"name":"products","subcommands":[{"name":"list"},{"name":"reviews","subcommands":[{"name":"list"}]}]},
+  {"name":"doctor"},
+  {"name":"auth","subcommands":[{"name":"refresh"}]}
+]}
+JSON
+  exit 0
+fi
+case "$1 $2 $3" in
+  "products list --json") echo '{"data":[{"id":"p1"}]}' ;;
+  "products reviews list") echo '{"data":[{"id":"r1"}]}' ;;
+  *) echo "unexpected $*" >&2; exit 2 ;;
+esac
+`)
+	writeTestResearchJSON(t, dir, nil)
+
+	result := RunLiveCheck(LiveCheckOptions{CLIDir: dir, BinaryName: "stub", Timeout: 5 * time.Second})
+	require.False(t, result.Unable, "result was Unable: %s", result.Reason)
+	require.Equal(t, 2, result.Checked())
+	require.Equal(t, 2, result.Passed)
+	require.Equal(t, "products list", result.Features[0].Command)
+	require.Equal(t, "stub products list --json", result.Features[0].Example)
+	require.Equal(t, "products reviews list", result.Features[1].Command)
+}
+
 // TestLiveCheck_UnableWhenNoBinary verifies the check reports Unable when the
 // binary doesn't exist — distinguishing "CLI wasn't built" from "CLI flunked".
 func TestLiveCheck_UnableWhenNoBinary(t *testing.T) {
@@ -221,6 +251,7 @@ func TestExtractQueryToken(t *testing.T) {
 		{[]string{"recipe", "get", "https://example.com/recipe"}, ""},
 		{[]string{"recipe", "open", "42"}, ""},
 		{[]string{"tonight", "--max-time", "30m"}, ""},
+		{[]string{"cookbook", "list", "--json"}, ""},
 		{[]string{"cookbook"}, ""},
 	}
 	for _, tc := range cases {

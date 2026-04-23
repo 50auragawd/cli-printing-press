@@ -36,6 +36,9 @@ type Scorecard struct {
 	OverallGrade       string       `json:"overall_grade"`
 	GapReport          []string     `json:"gap_report"`
 	UnscoredDimensions []string     `json:"unscored_dimensions,omitempty"`
+
+	verifyCalibrationFloor   int
+	browserSessionUnverified bool
 }
 
 // SteinerScore breaks down the Steinberger bar into 11 dimensions, each 0-10.
@@ -178,6 +181,16 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 	// Tier 1: Infrastructure (string-matching, 190 max; reduced per dimension
 	// when the opt-in MCP, cache_freshness, and new MCP-shape dimensions are
 	// absent for this CLI — see tier1Max below).
+	browserSessionUnverified := verifyReport != nil && verifyReport.BrowserSessionRequired && verifyReport.BrowserSessionProof != "valid"
+	sc.browserSessionUnverified = browserSessionUnverified
+	if browserSessionUnverified {
+		if sc.Steinberger.Auth > 5 {
+			sc.Steinberger.Auth = 5
+		}
+		if sc.Steinberger.AuthProtocol > 5 {
+			sc.Steinberger.AuthProtocol = 5
+		}
+	}
 	tier1Raw := sc.Steinberger.OutputModes +
 		sc.Steinberger.Auth +
 		sc.Steinberger.ErrorHandling +
@@ -259,20 +272,11 @@ func RunScorecard(outputDir, pipelineDir, specPath string, verifyReport *VerifyR
 		sc.Steinberger.Percentage = sc.Steinberger.Total // Total IS the percentage (0-100)
 	}
 
-	// Calibrate: verify pass rate sets a floor on Total.
-	// PassRate is already 0-100 (e.g., 91.0 for 91%), not 0.0-1.0.
 	if verifyReport != nil {
 		verifyScore := int(verifyReport.PassRate)
-		floor := (verifyScore * 80) / 100 // 91% verify → 72 floor
-		if sc.Steinberger.Total < floor {
-			originalTotal := sc.Steinberger.Total
-			sc.Steinberger.Total = floor
-			sc.Steinberger.Percentage = floor
-			sc.Steinberger.CalibrationNote = fmt.Sprintf(
-				"Score raised from %d to %d based on %d%% verify pass rate",
-				originalTotal, floor, verifyScore)
-		}
+		sc.verifyCalibrationFloor = (verifyScore * 80) / 100 // 91% verify -> 72 floor
 	}
+	applyScorecardCalibration(sc)
 
 	// Grade
 	sc.OverallGrade = computeGrade(sc.Steinberger.Percentage)
@@ -539,9 +543,7 @@ func scoreDoctor(dir string) int {
 		score += 2
 	}
 	// Quality: checks API connectivity (makes an HTTP request)
-	hasHTTP := strings.Contains(content, "http.Get") || strings.Contains(content, "http.Head") ||
-		strings.Contains(content, "http.NewRequest") || strings.Contains(content, "httpClient")
-	if hasHTTP {
+	if hasDoctorHTTPReachability(content) {
 		score += 2
 	}
 	// Quality: checks config file
@@ -556,6 +558,18 @@ func scoreDoctor(dir string) int {
 		score = 10
 	}
 	return score
+}
+
+func hasDoctorHTTPReachability(content string) bool {
+	if strings.Contains(content, "http.Get") ||
+		strings.Contains(content, "http.Head") ||
+		strings.Contains(content, "http.Post") ||
+		strings.Contains(content, "http.NewRequest") {
+		return true
+	}
+	clientCallRe := regexp.MustCompile(`\b[A-Za-z_]\w*(?:Client|HTTPClient)?\.(?:Get|Head|Post|Put|Patch|Delete|Do)\s*\(`)
+	inlineClientCallRe := regexp.MustCompile(`\(&http\.Client\s*\{[^}]*\}\)\.(?:Get|Head|Post|Put|Patch|Delete|Do)\s*\(`)
+	return clientCallRe.MatchString(content) || inlineClientCallRe.MatchString(content)
 }
 
 func scoreAgentNative(dir string) int {
@@ -820,6 +834,134 @@ func scoreLiveAPIVerification(verifyReport *VerifyReport) (int, bool) {
 		score = 10
 	}
 	return score, true
+}
+
+func scoreLiveAPIVerificationFromLiveCheck(live *LiveCheckResult) (int, bool) {
+	if live == nil || live.Unable || live.Checked() == 0 {
+		return 0, false
+	}
+	switch {
+	case live.Passed >= 3:
+		return 10, true
+	case live.Passed >= 1:
+		return 5, true
+	default:
+		return 0, true
+	}
+}
+
+func ApplyLiveCheckToScorecard(sc *Scorecard, live *LiveCheckResult) {
+	if sc == nil {
+		return
+	}
+	score, scored := scoreLiveAPIVerificationFromLiveCheck(live)
+	if !scored {
+		return
+	}
+	sc.Steinberger.LiveAPIVerification = score
+	sc.UnscoredDimensions = removeUnscoredDimension(sc.UnscoredDimensions, "live_api_verification")
+	recomputeScorecardTotals(sc)
+	applyScorecardCalibration(sc)
+	sc.OverallGrade = computeGrade(sc.Steinberger.Percentage)
+	sc.GapReport = buildGapReport(sc.Steinberger, sc.UnscoredDimensions)
+}
+
+func applyScorecardCalibration(sc *Scorecard) {
+	if sc == nil {
+		return
+	}
+	var notes []string
+	if sc.verifyCalibrationFloor > 0 && sc.Steinberger.Total < sc.verifyCalibrationFloor {
+		originalTotal := sc.Steinberger.Total
+		sc.Steinberger.Total = sc.verifyCalibrationFloor
+		notes = append(notes, fmt.Sprintf(
+			"Score raised from %d to %d based on verify pass rate",
+			originalTotal, sc.verifyCalibrationFloor))
+	}
+	if sc.browserSessionUnverified && sc.Steinberger.Total > 69 {
+		sc.Steinberger.Total = 69
+		notes = append(notes, "Score capped because required browser-session auth was not verified")
+	}
+	sc.Steinberger.Percentage = sc.Steinberger.Total
+	sc.Steinberger.CalibrationNote = strings.Join(notes, "; ")
+}
+
+func removeUnscoredDimension(dimensions []string, name string) []string {
+	out := dimensions[:0]
+	for _, dimension := range dimensions {
+		if dimension != name {
+			out = append(out, dimension)
+		}
+	}
+	return out
+}
+
+func recomputeScorecardTotals(sc *Scorecard) {
+	tier1Raw := sc.Steinberger.OutputModes +
+		sc.Steinberger.Auth +
+		sc.Steinberger.ErrorHandling +
+		sc.Steinberger.TerminalUX +
+		sc.Steinberger.README +
+		sc.Steinberger.Doctor +
+		sc.Steinberger.AgentNative +
+		sc.Steinberger.MCPQuality +
+		sc.Steinberger.MCPTokenEff +
+		sc.Steinberger.MCPRemoteTransport +
+		sc.Steinberger.MCPToolDesign +
+		sc.Steinberger.MCPSurfaceStrategy +
+		sc.Steinberger.LocalCache +
+		sc.Steinberger.CacheFreshness +
+		sc.Steinberger.Breadth +
+		sc.Steinberger.Vision +
+		sc.Steinberger.Workflows +
+		sc.Steinberger.Insight +
+		sc.Steinberger.AgentWorkflow
+
+	tier1Max := 190
+	if sc.IsDimensionUnscored("mcp_token_efficiency") {
+		tier1Max -= 10
+	}
+	if sc.IsDimensionUnscored("cache_freshness") {
+		tier1Max -= 10
+	}
+	if sc.IsDimensionUnscored("mcp_remote_transport") {
+		tier1Max -= 10
+	}
+	if sc.IsDimensionUnscored("mcp_tool_design") {
+		tier1Max -= 10
+	}
+	if sc.IsDimensionUnscored("mcp_surface_strategy") {
+		tier1Max -= 10
+	}
+	tier1Normalized := 0
+	if tier1Max > 0 {
+		tier1Normalized = (tier1Raw * 50) / tier1Max
+	}
+
+	tier2Raw := sc.Steinberger.PathValidity +
+		sc.Steinberger.AuthProtocol +
+		sc.Steinberger.DataPipelineIntegrity +
+		sc.Steinberger.SyncCorrectness +
+		sc.Steinberger.TypeFidelity +
+		sc.Steinberger.DeadCode +
+		sc.Steinberger.LiveAPIVerification
+
+	tier2Max := 60
+	if sc.IsDimensionUnscored("live_api_verification") {
+		tier2Max -= 10
+	}
+	if sc.IsDimensionUnscored("path_validity") {
+		tier2Max -= 10
+	}
+	if sc.IsDimensionUnscored("auth_protocol") {
+		tier2Max -= 10
+	}
+	tier2Normalized := 0
+	if tier2Max > 0 {
+		tier2Normalized = (tier2Raw * 50) / tier2Max
+	}
+	sc.Steinberger.Total = tier1Normalized + tier2Normalized
+	sc.Steinberger.Percentage = sc.Steinberger.Total
 }
 
 func scoreBreadth(dir string) int {
