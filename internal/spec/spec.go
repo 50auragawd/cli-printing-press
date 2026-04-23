@@ -213,6 +213,14 @@ type CacheConfig struct {
 	RefreshTimeout string            `yaml:"refresh_timeout,omitempty" json:"refresh_timeout,omitempty"` // max wall-clock the pre-run refresh may block the command (e.g., "30s"). On timeout the command serves stale data with a stderr warning. Blank means runtime default (30s).
 	EnvOptOut      string            `yaml:"env_opt_out,omitempty" json:"env_opt_out,omitempty"`         // env var name that disables auto-refresh when set to "1" (e.g., LINEAR_NO_AUTO_REFRESH). Blank lets the template derive {{upper name}}_NO_AUTO_REFRESH.
 	Resources      map[string]string `yaml:"resources,omitempty" json:"resources,omitempty"`             // per-resource override of stale_after (e.g., quotes: "5m", channels: "24h"). Resources not listed inherit StaleAfter.
+	Commands       []CacheCommand    `yaml:"commands,omitempty" json:"commands,omitempty"`               // optional custom command-path coverage for hand-authored store-backed reads. Generated resource commands are covered automatically.
+}
+
+// CacheCommand declares that a hand-authored command path reads one or more
+// syncable resources and should participate in the generated freshness hook.
+type CacheCommand struct {
+	Name      string   `yaml:"name" json:"name"`           // lowercase cobra command path, without the binary name (e.g., "today" or "insights stale")
+	Resources []string `yaml:"resources" json:"resources"` // resource names to refresh before serving the command
 }
 
 // ShareConfig gates the git-backed snapshot share surface emitted into a
@@ -575,7 +583,7 @@ func (s *APISpec) Validate() error {
 	if err := validateExtraCommands(s.ExtraCommands); err != nil {
 		return err
 	}
-	if err := validateCacheShare(s.Cache, s.Share); err != nil {
+	if err := validateCacheShare(s.Cache, s.Share, s.Resources); err != nil {
 		return err
 	}
 	if err := validateMCP(s.MCP, s.Resources); err != nil {
@@ -690,7 +698,7 @@ var shareTableNameRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // malformed values so typos surface at spec load, not at end-user runtime.
 var durationLikeRe = regexp.MustCompile(`^\d+(\.\d+)?(ns|us|µs|ms|s|m|h)(\d+(\.\d+)?(ns|us|µs|ms|s|m|h))*$`)
 
-func validateCacheShare(cache CacheConfig, share ShareConfig) error {
+func validateCacheShare(cache CacheConfig, share ShareConfig, resources map[string]Resource) error {
 	if cache.StaleAfter != "" && !durationLikeRe.MatchString(cache.StaleAfter) {
 		return fmt.Errorf("cache.stale_after %q is not a valid Go duration", cache.StaleAfter)
 	}
@@ -703,6 +711,38 @@ func validateCacheShare(cache CacheConfig, share ShareConfig) error {
 		}
 		if !durationLikeRe.MatchString(dur) {
 			return fmt.Errorf("cache.resources[%s] = %q is not a valid Go duration", resource, dur)
+		}
+	}
+	if !cache.Enabled && len(cache.Commands) > 0 {
+		return fmt.Errorf("cache.commands is set but cache.enabled is false; either enable cache or remove")
+	}
+	seenCommands := make(map[string]struct{}, len(cache.Commands))
+	for i, command := range cache.Commands {
+		if command.Name == "" {
+			return fmt.Errorf("cache.commands[%d]: name is required", i)
+		}
+		if !extraCommandNameRe.MatchString(command.Name) {
+			return fmt.Errorf("cache.commands[%d]: name %q must be lowercase command path (one to three segments separated by single spaces, lowercase letters, digits, and hyphens)", i, command.Name)
+		}
+		if _, dup := seenCommands[command.Name]; dup {
+			return fmt.Errorf("cache.commands[%d]: name %q appears more than once", i, command.Name)
+		}
+		seenCommands[command.Name] = struct{}{}
+		if len(command.Resources) == 0 {
+			return fmt.Errorf("cache.commands[%d] (%s): resources must not be empty", i, command.Name)
+		}
+		seenResources := make(map[string]struct{}, len(command.Resources))
+		for j, resource := range command.Resources {
+			if resource == "" {
+				return fmt.Errorf("cache.commands[%d].resources[%d]: resource name must not be empty", i, j)
+			}
+			if _, ok := resources[resource]; !ok {
+				return fmt.Errorf("cache.commands[%d].resources[%d]: resource %q is not declared in resources", i, j, resource)
+			}
+			if _, dup := seenResources[resource]; dup {
+				return fmt.Errorf("cache.commands[%d].resources[%d]: resource %q appears more than once", i, j, resource)
+			}
+			seenResources[resource] = struct{}{}
 		}
 	}
 

@@ -17,13 +17,21 @@ import (
 // readCommandResources maps command paths ({{backtick}}cmd.CommandPath(){{backtick}}) to the
 // resource types those commands read. The auto-refresh hook consults this
 // map to decide whether to refresh the local cache before serving.
-// Populated from SyncableResources at generation time.
+// Populated from generated syncable resource commands and any custom
+// command-path coverage declared in spec.Cache.Commands.
 var readCommandResources = map[string][]string{
 {{- range .SyncableResources}}
 	"{{$.Name}}-pp-cli {{.Name}}":        {"{{.Name}}"},
 	"{{$.Name}}-pp-cli {{.Name}} list":   {"{{.Name}}"},
 	"{{$.Name}}-pp-cli {{.Name}} get":    {"{{.Name}}"},
 	"{{$.Name}}-pp-cli {{.Name}} search": {"{{.Name}}"},
+{{- end}}
+{{- range .Cache.Commands}}
+	"{{$.Name}}-pp-cli {{.Name}}": {
+{{- range .Resources}}
+		"{{.}}",
+{{- end}}
+	},
 {{- end}}
 }
 
@@ -72,45 +80,97 @@ func refreshTimeout() time.Duration {
 }
 
 // autoRefreshIfStale decides whether to refresh and runs the refresh in
-// one call. It returns nothing: refresh failures become stderr warnings
-// and the command proceeds with the stale cache. The data-source contract
-// is respected: only "auto" triggers the hook; "live" and "local" short-
-// circuit at the first check.
-func autoRefreshIfStale(ctx context.Context, flags *rootFlags, resources []string) {
+// one call. Refresh failures become stderr warnings and the command proceeds
+// with the stale cache. The returned metadata is attached to generated JSON
+// provenance envelopes under meta.freshness.
+func autoRefreshIfStale(ctx context.Context, flags *rootFlags, resources []string) (meta cliutil.FreshnessMeta) {
+	started := time.Now()
+	meta = cliutil.FreshnessMeta{
+		Decision:  "skipped",
+		Resources: append([]string(nil), resources...),
+		Source:    flags.dataSource,
+	}
+	defer func() {
+		meta.ElapsedMS = time.Since(started).Milliseconds()
+	}()
 	if flags.dataSource != "auto" {
-		return
+		meta.Reason = "data_source_" + flags.dataSource
+		return meta
 	}
 	if len(resources) == 0 {
-		return
+		meta.Reason = "no_resources"
+		return meta
 	}
 	dbPath := defaultDBPath("{{.Name}}-pp-cli")
-	if _, err := os.Stat(dbPath); err != nil {
-		// No cache on disk yet; nothing to refresh against. The first
-		// `sync` hydrates and subsequent reads benefit from auto-refresh.
-		return
-	}
 	db, err := store.Open(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: auto-refresh skipped (open: %v)\n", err)
-		return
+		meta.Decision = "error"
+		meta.Reason = "open_store"
+		meta.Error = err.Error()
+		return meta
 	}
 	defer db.Close()
 
 	policy := cachePolicy()
+	if policy.EnvOptOut != "" && os.Getenv(policy.EnvOptOut) == "1" {
+		meta.Decision = "skipped"
+		meta.Reason = "env_opt_out"
+		return meta
+	}
 	decision, err := cliutil.EnsureFresh(ctx, db.DB(), resources, policy)
+	meta.Decision = decision.String()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: auto-refresh decision failed: %v\n", err)
-		return
+		meta.Decision = "error"
+		meta.Reason = "decision_failed"
+		meta.Error = err.Error()
+		return meta
 	}
 	if decision == cliutil.DecisionFresh || decision == cliutil.DecisionNoStore {
-		return
+		meta.Reason = decision.String()
+		return meta
 	}
 
 	refreshCtx, cancel := context.WithTimeout(ctx, refreshTimeout())
 	defer cancel()
+	meta.Ran = true
 	if err := runAutoRefresh(refreshCtx, flags, db, resources); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: using stale {{.Name}}-pp-cli cache (refresh failed: %v)\n", err)
+		meta.Reason = "refresh_failed"
+		meta.Error = err.Error()
+		return meta
 	}
+	meta.Reason = "refreshed"
+	return meta
+}
+
+// ensureFreshForResources lets hand-authored commands participate in the same
+// freshness hook as generated resource commands. Custom commands should call
+// this before reading from the store, then use wrapWithProvenance or
+// wrapResultsWithFreshness for JSON output if they want meta.freshness.
+func ensureFreshForResources(ctx context.Context, flags *rootFlags, resources ...string) cliutil.FreshnessMeta {
+	meta := autoRefreshIfStale(ctx, flags, resources)
+	flags.freshnessMeta = meta
+	return meta
+}
+
+// ensureFreshForCommand looks up a registered command path in
+// readCommandResources and applies the same freshness hook used by root
+// pre-run. commandPath must match cobra.CommandPath(), including the binary
+// name. It returns skipped metadata for unregistered commands.
+func ensureFreshForCommand(ctx context.Context, flags *rootFlags, commandPath string) cliutil.FreshnessMeta {
+	resources, ok := readCommandResources[commandPath]
+	if !ok {
+		meta := cliutil.FreshnessMeta{
+			Decision: "skipped",
+			Reason:   "unregistered_command",
+			Source:   flags.dataSource,
+		}
+		flags.freshnessMeta = meta
+		return meta
+	}
+	return ensureFreshForResources(ctx, flags, resources...)
 }
 
 // runAutoRefresh invokes the API-backed refresh path for the stale resources.

@@ -62,6 +62,46 @@ func main() {
 	assert.FileExists(t, existingBinary)
 }
 
+func TestRunFreshnessContractTestPassesGeneratedSurface(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "cli"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "cliutil"), 0o755))
+	writeTestFile(t, filepath.Join(dir, "internal", "cli", "auto_refresh.go"), `package cli
+var readCommandResources = map[string][]string{"demo-pp-cli items list": {"items"}}
+func ensureFreshForResources() {}
+func ensureFreshForCommand() {}
+`)
+	writeTestFile(t, filepath.Join(dir, "internal", "cliutil", "freshness.go"), `package cliutil
+type FreshnessMeta struct {}
+`)
+	writeTestFile(t, filepath.Join(dir, "internal", "cli", "helpers.go"), `package cli
+func wrap() { meta["freshness"] = nil }
+`)
+	writeTestFile(t, filepath.Join(dir, "internal", "cli", "data_source.go"), `package cli
+func resolveRead() {
+	switch flags.dataSource {
+	case "live":
+		data, err := c.Get(path, params)
+		if err != nil { return }
+		return data, attachFreshness(DataProvenance{Source: "live"}, flags), nil
+	}
+}
+`)
+
+	result := runFreshnessContractTest(dir)
+	assert.Equal(t, "PASS", result.Verdict)
+	assert.True(t, result.Metadata)
+	assert.True(t, result.LiveBypass)
+	assert.True(t, result.HelperSurface)
+	assert.Greater(t, result.RegisteredPaths, 0)
+}
+
+func TestRunFreshnessContractTestSkipsWhenNotEmitted(t *testing.T) {
+	result := runFreshnessContractTest(t.TempDir())
+	assert.Equal(t, "SKIP", result.Verdict)
+	assert.False(t, result.Enabled)
+}
+
 func TestRunBrowserSessionProofTestRequiresValidDoctorProof(t *testing.T) {
 	binary := buildDoctorJSONBinary(t, `{"browser_session_proof":"missing or stale","browser_session_proof_detail":"proof not found"}`)
 

@@ -39,6 +39,7 @@ type VerifyReport struct {
 	PassRate               float64         `json:"pass_rate"`
 	DataPipeline           bool            `json:"data_pipeline"`
 	DataPipelineDetail     string          `json:"data_pipeline_detail,omitempty"` // PASS, WARN, SKIP, FAIL with context
+	Freshness              FreshnessResult `json:"freshness,omitempty"`
 	BrowserSessionRequired bool            `json:"browser_session_required,omitempty"`
 	BrowserSessionProof    string          `json:"browser_session_proof,omitempty"`
 	BrowserSessionDetail   string          `json:"browser_session_detail,omitempty"`
@@ -56,6 +57,16 @@ type CommandResult struct {
 	Execute bool   `json:"execute"`
 	Score   int    `json:"score"` // 0-3
 	Error   string `json:"error,omitempty"`
+}
+
+type FreshnessResult struct {
+	Enabled         bool   `json:"enabled"`
+	RegisteredPaths int    `json:"registered_paths,omitempty"`
+	Metadata        bool   `json:"metadata,omitempty"`
+	LiveBypass      bool   `json:"live_bypass,omitempty"`
+	HelperSurface   bool   `json:"helper_surface,omitempty"`
+	Verdict         string `json:"verdict,omitempty"` // PASS, WARN, SKIP, FAIL
+	Detail          string `json:"detail,omitempty"`
 }
 
 // RunVerify executes the runtime verification pipeline.
@@ -191,6 +202,7 @@ func RunVerify(cfg VerifyConfig) (*VerifyReport, error) {
 
 	// 8. Data pipeline test
 	report.DataPipeline, report.DataPipelineDetail = runDataPipelineTest(binaryPath, report.Mode, buildEnv)
+	report.Freshness = runFreshnessContractTest(cfg.Dir)
 
 	if spec != nil && spec.Auth.RequiresBrowserSession {
 		report.BrowserSessionRequired = true
@@ -280,6 +292,7 @@ func runStructuralVerify(cfg VerifyConfig) (*VerifyReport, error) {
 	} else {
 		report.DataPipelineDetail = "FAIL (version command)"
 	}
+	report.Freshness = runFreshnessContractTest(cfg.Dir)
 
 	// 5. Aggregate
 	for _, r := range report.Results {
@@ -1013,6 +1026,56 @@ func parseCountOutput(out []byte) int {
 		}
 	}
 	return 0
+}
+
+func runFreshnessContractTest(dir string) FreshnessResult {
+	autoRefresh := readRuntimeFile(filepath.Join(dir, "internal", "cli", "auto_refresh.go"))
+	freshness := readRuntimeFile(filepath.Join(dir, "internal", "cliutil", "freshness.go"))
+	helpers := readRuntimeFile(filepath.Join(dir, "internal", "cli", "helpers.go"))
+	dataSource := readRuntimeFile(filepath.Join(dir, "internal", "cli", "data_source.go"))
+	if autoRefresh == "" && freshness == "" {
+		return FreshnessResult{Verdict: "SKIP", Detail: "cache freshness helper not emitted"}
+	}
+
+	liveBypass := strings.Contains(dataSource, `case "live":`) &&
+		!strings.Contains(dataSource, "writeThroughCache(resourceType, data)\n\t\treturn data, attachFreshness(DataProvenance{Source: \"live\"}, flags), nil")
+	result := FreshnessResult{
+		Enabled:         true,
+		RegisteredPaths: strings.Count(autoRefresh, "-pp-cli "),
+		Metadata:        strings.Contains(freshness, "type FreshnessMeta struct") && strings.Contains(helpers, `meta["freshness"]`),
+		LiveBypass:      liveBypass,
+		HelperSurface:   strings.Contains(autoRefresh, "func ensureFreshForResources(") && strings.Contains(autoRefresh, "func ensureFreshForCommand("),
+	}
+
+	var missing []string
+	if result.RegisteredPaths == 0 {
+		missing = append(missing, "registered command paths")
+	}
+	if !result.Metadata {
+		missing = append(missing, "meta.freshness metadata")
+	}
+	if !result.LiveBypass {
+		missing = append(missing, "live data-source bypass")
+	}
+	if !result.HelperSurface {
+		missing = append(missing, "custom command helper surface")
+	}
+	if len(missing) > 0 {
+		result.Verdict = "WARN"
+		result.Detail = "missing " + strings.Join(missing, ", ")
+		return result
+	}
+	result.Verdict = "PASS"
+	result.Detail = "freshness registry, metadata, live bypass, and custom helper surface present"
+	return result
+}
+
+func readRuntimeFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // startMockServer creates an httptest.Server from the OpenAPI spec.

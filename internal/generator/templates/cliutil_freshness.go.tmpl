@@ -51,6 +51,19 @@ func (d Decision) String() string {
 	}
 }
 
+// FreshnessMeta is the stable agent-facing metadata shape for commands that
+// participate in machine-owned freshness. Generated JSON provenance envelopes
+// attach this under meta.freshness.
+type FreshnessMeta struct {
+	Decision  string   `json:"decision"`             // fresh, stale-api, stale-share, no-store, skipped, or error
+	Ran       bool     `json:"ran"`                  // true when the hook attempted a refresh
+	Reason    string   `json:"reason,omitempty"`     // fresh, refreshed, refresh_failed, data_source_live, etc.
+	Resources []string `json:"resources,omitempty"`  // resource types covered by the command path
+	ElapsedMS int64    `json:"elapsed_ms,omitempty"` // wall-clock spent in the freshness hook
+	Error     string   `json:"error,omitempty"`      // refresh/decision error, redacted only by the caller if needed
+	Source    string   `json:"source,omitempty"`     // current data-source mode: auto, local, or live
+}
+
 // Policy configures a freshness check. StaleAfter is the default threshold
 // applied to any resource not listed in PerResource. PerResource is an
 // override map (resource_type -> per-type threshold). EnvOptOut, when set

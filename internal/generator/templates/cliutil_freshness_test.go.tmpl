@@ -6,6 +6,7 @@ package cliutil
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -216,6 +217,30 @@ func TestDecision_StringStableTags(t *testing.T) {
 	for d, want := range cases {
 		if d.String() != want {
 			t.Errorf("%d.String() = %q, want %q", d, d.String(), want)
+		}
+	}
+}
+
+func TestFreshnessMeta_JSONShape(t *testing.T) {
+	meta := FreshnessMeta{
+		Decision:  "stale-api",
+		Ran:       true,
+		Reason:    "refreshed",
+		Resources: []string{"issues"},
+		ElapsedMS: 12,
+		Source:    "auto",
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"decision", "ran", "reason", "resources", "elapsed_ms", "source"} {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("missing json key %q in %s", key, string(data))
 		}
 	}
 }

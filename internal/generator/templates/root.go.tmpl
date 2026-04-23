@@ -38,6 +38,7 @@ type rootFlags struct {
 	timeout      time.Duration
 	rateLimit    float64
 	dataSource   string
+	freshnessMeta any
 
 	// deliverBuf captures command output when --deliver is set to a
 	// non-stdout sink. Flushed to the sink after Execute returns.
@@ -177,7 +178,7 @@ Run '{{.Name}}-pp-cli doctor' to verify auth and connectivity.{{backtick}},
 		// runs a bounded API refresh. Failures become stderr warnings;
 		// the command proceeds with the stale cache either way.
 		if resources, isRead := readCommandResources[cmd.CommandPath()]; isRead {
-			autoRefreshIfStale(cmd.Context(), &flags, resources)
+			flags.freshnessMeta = autoRefreshIfStale(cmd.Context(), &flags, resources)
 		}
 {{- end}}
 		return nil

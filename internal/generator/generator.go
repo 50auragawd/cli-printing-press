@@ -573,16 +573,17 @@ type clientTemplateData struct {
 // readmeTemplateData wraps APISpec with additional fields for README rendering.
 type readmeTemplateData struct {
 	*spec.APISpec
-	Sources          []ReadmeSource
-	DiscoveryPages   []string
-	NovelFeatures    []NovelFeature
-	Narrative        *ReadmeNarrative
-	ProseName        string
-	HasDataLayer     bool
-	HasAsyncJobs     bool
-	HasWriteCommands bool
-	HasAuth          bool
-	TrafficAnalysis  *trafficAnalysisTemplateData
+	Sources           []ReadmeSource
+	DiscoveryPages    []string
+	NovelFeatures     []NovelFeature
+	Narrative         *ReadmeNarrative
+	ProseName         string
+	HasDataLayer      bool
+	HasAsyncJobs      bool
+	HasWriteCommands  bool
+	HasAuth           bool
+	FreshnessCommands []string
+	TrafficAnalysis   *trafficAnalysisTemplateData
 }
 
 type generatorTemplateData struct {
@@ -613,18 +614,46 @@ func (g *Generator) readmeData() *readmeTemplateData {
 		}
 	}
 	return &readmeTemplateData{
-		APISpec:          g.Spec,
-		Sources:          g.Sources,
-		DiscoveryPages:   g.DiscoveryPages,
-		NovelFeatures:    g.NovelFeatures,
-		Narrative:        g.Narrative,
-		ProseName:        g.proseName(),
-		HasDataLayer:     g.VisionSet.Store,
-		HasAsyncJobs:     len(g.AsyncJobs) > 0,
-		HasWriteCommands: hasWriteCommands(g.Spec.Resources),
-		HasAuth:          hasAuth(g.Spec.Auth),
-		TrafficAnalysis:  g.trafficAnalysisData(),
+		APISpec:           g.Spec,
+		Sources:           g.Sources,
+		DiscoveryPages:    g.DiscoveryPages,
+		NovelFeatures:     g.NovelFeatures,
+		Narrative:         g.Narrative,
+		ProseName:         g.proseName(),
+		HasDataLayer:      g.VisionSet.Store,
+		HasAsyncJobs:      len(g.AsyncJobs) > 0,
+		HasWriteCommands:  hasWriteCommands(g.Spec.Resources),
+		HasAuth:           hasAuth(g.Spec.Auth),
+		FreshnessCommands: g.freshnessCommandPaths(),
+		TrafficAnalysis:   g.trafficAnalysisData(),
 	}
+}
+
+func (g *Generator) freshnessCommandPaths() []string {
+	if !g.Spec.Cache.Enabled || g.profile == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var paths []string
+	add := func(path string) {
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	for _, resource := range g.profile.SyncableResources {
+		prefix := naming.CLI(g.Spec.Name) + " " + resource.Name
+		add(prefix)
+		add(prefix + " list")
+		add(prefix + " get")
+		add(prefix + " search")
+	}
+	for _, command := range g.Spec.Cache.Commands {
+		add(naming.CLI(g.Spec.Name) + " " + command.Name)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func (g *Generator) proseName() string {
@@ -900,6 +929,9 @@ func (g *Generator) Generate() error {
 	}
 	if g.profile == nil {
 		g.profile = profiler.Profile(g.Spec)
+	}
+	if err := g.validateFreshnessCommandCoverage(); err != nil {
+		return err
 	}
 
 	// Detect async-job endpoints once per generation. Results flow into
@@ -1547,6 +1579,24 @@ func (g *Generator) Generate() error {
 		return fmt.Errorf("rendering goreleaser: %w", err)
 	}
 
+	return nil
+}
+
+func (g *Generator) validateFreshnessCommandCoverage() error {
+	if !g.Spec.Cache.Enabled || len(g.Spec.Cache.Commands) == 0 {
+		return nil
+	}
+	syncable := make(map[string]struct{}, len(g.profile.SyncableResources))
+	for _, resource := range g.profile.SyncableResources {
+		syncable[resource.Name] = struct{}{}
+	}
+	for _, command := range g.Spec.Cache.Commands {
+		for _, resource := range command.Resources {
+			if _, ok := syncable[resource]; !ok {
+				return fmt.Errorf("cache.commands[%s]: resource %q is not syncable and cannot be auto-refreshed", command.Name, resource)
+			}
+		}
+	}
 	return nil
 }
 

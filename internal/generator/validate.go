@@ -146,6 +146,12 @@ func runCommand(dir string, timeout time.Duration, name string, args ...string) 
 }
 
 func goBuildCacheDir(dir string) (string, error) {
+	if cacheDir := os.Getenv("GOCACHE"); cacheDir != "" {
+		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+			return "", fmt.Errorf("creating GOCACHE dir: %w", err)
+		}
+		return cacheDir, nil
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		absDir, absErr := filepath.Abs(dir)

@@ -1104,6 +1104,7 @@ type DataProvenance struct {
 	SyncedAt    *time.Time `json:"synced_at,omitempty"`     // when local data was last synced
 	Reason      string     `json:"reason,omitempty"`        // why local was used: "user_requested", "api_unreachable", "no_search_endpoint"
 	ResourceType string    `json:"resource_type,omitempty"` // which resource type was queried
+	Freshness    any        `json:"freshness,omitempty"`     // optional machine-owned freshness metadata for covered command paths
 }
 
 // printProvenance writes a one-line provenance message to stderr for TTY users.
@@ -1151,11 +1152,26 @@ func wrapWithProvenance(data json.RawMessage, prov DataProvenance) (json.RawMess
 	if prov.ResourceType != "" {
 		meta["resource_type"] = prov.ResourceType
 	}
+	if prov.Freshness != nil {
+		meta["freshness"] = prov.Freshness
+	}
 	envelope := map[string]any{
 		"results": json.RawMessage(data),
 		"meta":    meta,
 	}
 	return json.Marshal(envelope)
+}
+
+// wrapResultsWithFreshness gives hand-authored commands a small opt-in helper
+// for the generated provenance envelope without forcing arbitrary custom JSON
+// outputs to change shape.
+func wrapResultsWithFreshness(data json.RawMessage, flags *rootFlags) (json.RawMessage, error) {
+	prov := DataProvenance{}
+	if flags != nil {
+		prov.Source = flags.dataSource
+		prov.Freshness = flags.freshnessMeta
+	}
+	return wrapWithProvenance(data, prov)
 }
 
 // defaultDBPath returns the canonical path for the local SQLite database.

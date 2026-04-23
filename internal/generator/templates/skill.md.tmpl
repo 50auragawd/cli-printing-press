@@ -109,6 +109,21 @@ This CLI was generated with browser-observed traffic context.
 - `{{$.Name}}-pp-cli {{.Name}}{{if .Args}} {{.Args}}{{end}}` — {{oneline .Description}}
 {{- end}}
 {{end}}
+{{- if and .HasDataLayer .Cache.Enabled}}
+
+## Freshness Contract
+
+This printed CLI owns bounded freshness only for registered store-backed read command paths. In `--data-source auto` mode, those paths check `sync_state` and may run a bounded refresh before reading local data. `--data-source local` never refreshes. `--data-source live` reads the API and does not mutate the local store. Set `{{if .Cache.EnvOptOut}}{{.Cache.EnvOptOut}}{{else}}{{envName .Name}}_NO_AUTO_REFRESH{{end}}=1` to skip the freshness hook without changing source selection.
+{{- if .FreshnessCommands}}
+
+Covered paths:
+{{range .FreshnessCommands}}
+- `{{.}}`
+{{- end}}
+{{- end}}
+
+When JSON output uses the generated provenance envelope, freshness metadata appears at `meta.freshness`. Treat it as current-cache freshness for the covered command path, not a guarantee of complete historical backfill or API-specific enrichment.
+{{- end}}
 
 ### Finding the right command
 

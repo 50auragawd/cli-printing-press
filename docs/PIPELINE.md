@@ -101,6 +101,11 @@ Outputs:
 - Generated CLI source tree under the API's output directory
 - Working CLI binary for the target API
 
+Freshness ownership:
+- Store-backed CLIs that opt into `cache.enabled` get a generated command-path freshness registry. Generated syncable resource read commands are registered automatically; hand-authored commands must opt in explicitly with command-path coverage.
+- `--data-source auto` may run a bounded pre-read refresh for registered paths. `--data-source local` never refreshes. `--data-source live` reads the API and must not mutate the local store.
+- Freshness metadata belongs in the existing JSON provenance envelope at `meta.freshness`. It describes current-cache freshness for the covered path only; it must not be described as full historical backfill or API-specific enrichment.
+
 Gates:
 - All seven generator quality gates pass: `go mod tidy`, `go vet`, `go build`, binary build, `--help`, version, `doctor`
 

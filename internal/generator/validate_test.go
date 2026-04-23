@@ -10,6 +10,8 @@ import (
 )
 
 func TestGoBuildCacheDirIsShared(t *testing.T) {
+	t.Setenv("GOCACHE", "")
+
 	// Two different project directories should get the same cache dir.
 	// This is critical for CI performance — shared cache avoids each
 	// parallel test recompiling the Go standard library from scratch.
@@ -23,6 +25,8 @@ func TestGoBuildCacheDirIsShared(t *testing.T) {
 }
 
 func TestGoBuildCacheDirPath(t *testing.T) {
+	t.Setenv("GOCACHE", "")
+
 	dir, err := goBuildCacheDir("/tmp/any-project")
 	require.NoError(t, err)
 
@@ -31,4 +35,15 @@ func TestGoBuildCacheDirPath(t *testing.T) {
 
 	expected := filepath.Join(home, ".cache", "printing-press", "go-build")
 	assert.Equal(t, expected, dir)
+}
+
+func TestGoBuildCacheDirHonorsExplicitGOCACHE(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "go-build")
+	t.Setenv("GOCACHE", cacheDir)
+
+	dir, err := goBuildCacheDir("/tmp/any-project")
+	require.NoError(t, err)
+
+	assert.Equal(t, cacheDir, dir)
+	assert.DirExists(t, cacheDir)
 }

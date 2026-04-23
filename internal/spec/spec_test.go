@@ -788,6 +788,9 @@ cache:
   env_opt_out: DEMO_NO_AUTO_REFRESH
   resources:
     items: 5m
+  commands:
+    - name: dashboard
+      resources: [items]
 share:
   enabled: true
   snapshot_tables:
@@ -803,6 +806,9 @@ share:
 	assert.Equal(t, "30s", s.Cache.RefreshTimeout)
 	assert.Equal(t, "DEMO_NO_AUTO_REFRESH", s.Cache.EnvOptOut)
 	assert.Equal(t, "5m", s.Cache.Resources["items"])
+	require.Len(t, s.Cache.Commands, 1)
+	assert.Equal(t, "dashboard", s.Cache.Commands[0].Name)
+	assert.Equal(t, []string{"items"}, s.Cache.Commands[0].Resources)
 	assert.True(t, s.Share.Enabled)
 	assert.Equal(t, []string{"items", "sync_state"}, s.Share.SnapshotTables)
 	assert.Equal(t, "git@github.com:acme/demo-snapshots.git", s.Share.DefaultRepo)
@@ -903,6 +909,36 @@ func TestCacheShareValidation(t *testing.T) {
 			cache:   CacheConfig{Enabled: true, Resources: map[string]string{"items": "eh"}},
 			wantErr: "not a valid Go duration",
 		},
+		{
+			name:    "cache command uppercase rejected",
+			cache:   CacheConfig{Enabled: true, Commands: []CacheCommand{{Name: "Today", Resources: []string{"items"}}}},
+			wantErr: "lowercase command path",
+		},
+		{
+			name:    "cache command requires enabled cache",
+			cache:   CacheConfig{Commands: []CacheCommand{{Name: "today", Resources: []string{"items"}}}},
+			wantErr: "cache.enabled is false",
+		},
+		{
+			name:    "cache command duplicate rejected",
+			cache:   CacheConfig{Enabled: true, Commands: []CacheCommand{{Name: "today", Resources: []string{"items"}}, {Name: "today", Resources: []string{"items"}}}},
+			wantErr: "appears more than once",
+		},
+		{
+			name:    "cache command resources required",
+			cache:   CacheConfig{Enabled: true, Commands: []CacheCommand{{Name: "today"}}},
+			wantErr: "resources must not be empty",
+		},
+		{
+			name:    "cache command unknown resource rejected",
+			cache:   CacheConfig{Enabled: true, Commands: []CacheCommand{{Name: "today", Resources: []string{"launches"}}}},
+			wantErr: "is not declared in resources",
+		},
+		{
+			name:    "cache command duplicate resource rejected",
+			cache:   CacheConfig{Enabled: true, Commands: []CacheCommand{{Name: "today", Resources: []string{"items", "items"}}}},
+			wantErr: "appears more than once",
+		},
 	}
 
 	for _, tt := range tests {
@@ -928,6 +964,10 @@ func TestCacheShareAcceptsValidShapes(t *testing.T) {
 		{
 			name:  "cache with per-resource overrides",
 			cache: CacheConfig{Enabled: true, StaleAfter: "6h", Resources: map[string]string{"items": "5m", "teams": "24h"}},
+		},
+		{
+			name:  "cache with custom command coverage",
+			cache: CacheConfig{Enabled: true, Commands: []CacheCommand{{Name: "dashboard", Resources: []string{"items"}}}},
 		},
 		{
 			name:  "share only, no cache",
