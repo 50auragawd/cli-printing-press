@@ -584,3 +584,46 @@ func TestGenerateCmdRejectsTrafficAnalysisWithPlan(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--traffic-analysis cannot be used with --plan")
 }
+
+func TestGenerateCmdHonorsExplicitOutput(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "spec.yaml")
+	outputDir := filepath.Join(dir, "user-chosen-path")
+	derivedDir := filepath.Join(dir, "explicitoutput")
+
+	require.NoError(t, os.WriteFile(specPath, []byte(`name: explicitoutput
+description: Explicit output API
+version: 0.1.0
+base_url: https://api.example.com
+auth:
+  type: none
+config:
+  format: toml
+  path: ~/.config/explicitoutput-pp-cli/config.toml
+resources:
+  items:
+    description: Manage items
+    endpoints:
+      list:
+        method: GET
+        path: /items
+        description: List items
+`), 0o644))
+
+	cmd := newGenerateCmd()
+	cmd.SetArgs([]string{
+		"--spec", specPath,
+		"--output", outputDir,
+		"--validate=false",
+		"--force",
+	})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.FileExists(t, filepath.Join(outputDir, "go.mod"),
+		"generated files should land at the user-supplied --output path")
+	assert.NoDirExists(t, derivedDir,
+		"the spec-derived directory must not be created when --output is explicit")
+}
