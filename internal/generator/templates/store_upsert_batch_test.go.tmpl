@@ -56,7 +56,7 @@ func TestUpsertBatch_Populates{{pascal .Name}}Table(t *testing.T) {
 	}
 
 	var typed int
-	typedQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, "{{safeName .Name}}")
+	typedQuery := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"`, "{{.Name}}")
 	if err := db.QueryRow(typedQuery).Scan(&typed); err != nil {
 		t.Fatalf("count {{.Name}}: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestUpsertBatch_Sets{{pascal .Name}}ParentID(t *testing.T) {
 	db := s.DB()
 
 	var matchedA int
-	parentQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE parent_id = ?`, "{{safeName .Name}}")
+	parentQuery := fmt.Sprintf(`SELECT COUNT(*) FROM "%s" WHERE parent_id = ?`, "{{.Name}}")
 	if err := db.QueryRow(parentQuery, "parent-A").Scan(&matchedA); err != nil {
 		t.Fatalf("count by parent_id: %v", err)
 	}

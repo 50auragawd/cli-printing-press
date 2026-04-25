@@ -176,7 +176,7 @@ func TestMigrate_AddsParentIDOnUpgrade_{{pascal $table.Name}}(t *testing.T) {
 		t.Fatalf("rows: %v", err)
 	}
 	if !hasParentID {
-		t.Fatalf("parent_id column missing from {{safeName $table.Name}} after migrate")
+		t.Fatalf("parent_id column missing from {{$table.Name}} after migrate")
 	}
 }
 {{- end}}

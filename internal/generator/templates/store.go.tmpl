@@ -146,6 +146,13 @@ func (s *Store) ensureColumn(table, column, decl string) error {
 	}
 
 	if _, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`, table, column, decl)); err != nil {
+		// A concurrent Open() may have added the column between our
+		// PRAGMA check and this ALTER. SQLite returns SQLITE_ERROR with
+		// "duplicate column name", which busy_timeout does not retry.
+		// The DB is now in the desired state regardless of who won.
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		}
 		return fmt.Errorf("add column %s.%s: %w", table, column, err)
 	}
 	return nil
@@ -157,12 +164,20 @@ func (s *Store) ensureColumn(table, column, decl string) error {
 // statements referencing the column can succeed against the upgraded
 // table. Idempotent: safe to call on fresh DBs (table-not-found short-
 // circuit) and on already-current DBs (column-exists short-circuit).
+//
+// Table names are emitted bare (no safeName) — ensureColumn double-quotes
+// them at SQL emit time and uses parameter binding for the sqlite_master
+// lookup, so the values flow as Go string literals first and SQL
+// identifiers second. Wrapping with safeName here would embed literal
+// double-quote characters into the Go string and break compilation for
+// any spec whose dependent-resource snake_cased name is a SQL reserved
+// word.
 func (s *Store) backfillColumns() error {
 	for _, c := range []struct{ table, column, decl string }{
 {{- range $table := .Tables}}
 {{- range $col := $table.Columns}}
 {{- if eq $col.Name "parent_id"}}
-		{table: "{{safeName $table.Name}}", column: "parent_id", decl: "TEXT"},
+		{table: "{{$table.Name}}", column: "parent_id", decl: "TEXT"},
 {{- end}}
 {{- end}}
 {{- end}}

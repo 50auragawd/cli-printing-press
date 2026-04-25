@@ -2957,6 +2957,72 @@ func TestGenerateDependentSyncCompiles(t *testing.T) {
 	runGoCommand(t, outputDir, "test", "./internal/store")
 }
 
+func TestGenerateDependentSyncReservedWordCompiles(t *testing.T) {
+	t.Parallel()
+
+	// A spec whose dependent-resource table name is a SQL reserved word
+	// (e.g. references, trigger, view, order) must still produce a CLI
+	// that builds and whose store tests pass. The store template's
+	// backfillColumns slice and the upgrade-path test's t.Fatalf format
+	// string both interpolate the table name into Go double-quoted
+	// strings; safeSQLName quote-wraps reserved words for SQL contexts,
+	// so applying it in a Go-string context would emit invalid Go for
+	// any reserved-word resource. Regression for issue #272 follow-up.
+	apiSpec := &spec.APISpec{
+		Name:    "docstore",
+		Version: "0.1.0",
+		BaseURL: "https://api.example.com",
+		Auth: spec.AuthConfig{
+			Type:    "api_key",
+			Header:  "Authorization",
+			Format:  "Bearer {token}",
+			EnvVars: []string{"DOCSTORE_API_KEY"},
+		},
+		Config: spec.ConfigSpec{
+			Format: "toml",
+			Path:   "~/.config/docstore-pp-cli/config.toml",
+		},
+		Resources: map[string]spec.Resource{
+			"documents": {
+				Description: "Manage documents",
+				Endpoints: map[string]spec.Endpoint{
+					"list": {
+						Method:      "GET",
+						Path:        "/documents",
+						Description: "List documents",
+						Response:    spec.ResponseDef{Type: "array"},
+						Pagination:  &spec.Pagination{CursorParam: "after", LimitParam: "limit"},
+					},
+				},
+			},
+			// "references" snake_cases to "references" — a SQL reserved
+			// word per internal/generator/schema_builder.go:322.
+			"references": {
+				Description: "Manage references attached to a document",
+				Endpoints: map[string]spec.Endpoint{
+					"list": {
+						Method:      "GET",
+						Path:        "/documents/{documentId}/references",
+						Description: "List references for a document",
+						Response:    spec.ResponseDef{Type: "array"},
+						Pagination:  &spec.Pagination{CursorParam: "after", LimitParam: "limit"},
+					},
+				},
+			},
+		},
+	}
+
+	outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
+	gen := New(apiSpec, outputDir)
+	require.NoError(t, gen.Generate())
+
+	// The generated store.go must compile (no embedded "" from safeName
+	// quote-wrapping) and the per-table upgrade test must run cleanly.
+	runGoCommand(t, outputDir, "mod", "tidy")
+	runGoCommand(t, outputDir, "build", "./...")
+	runGoCommand(t, outputDir, "test", "./internal/store")
+}
+
 func TestGenerateGraphQLCompiles(t *testing.T) {
 	t.Parallel()
 
