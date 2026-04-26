@@ -254,6 +254,13 @@ func New(s *spec.APISpec, outputDir string) *Generator {
 		"jsonEnumSuggestion": jsonEnumSuggestion,
 		"envName":            naming.EnvPrefix,
 		"safeName":           safeSQLName,
+		"isBackfillColumn":   isStoreBackfillColumn,
+		"hasBackfillColumns": hasStoreBackfillColumns,
+		"backfillDecl":       storeBackfillDecl,
+		"safeNameSuffix": func(name, suffix string) string {
+			return safeSQLName(name + suffix)
+		},
+		"sqlString": sqlStringLiteral,
 		"hasDomainUpsert": func(name string) bool {
 			return domainUpsertMethodName(name) != "UpsertBatch"
 		},
@@ -1714,7 +1721,11 @@ func toPascal(s string) string {
 		lower := strings.ToLower(part)
 		parts[i] = strings.ToUpper(lower[:1]) + lower[1:]
 	}
-	return strings.Join(parts, "")
+	result := strings.Join(parts, "")
+	if len(result) > 0 && !unicode.IsLetter(rune(result[0])) {
+		result = "V" + result
+	}
+	return result
 }
 
 func domainUpsertMethodName(tableName string) string {
@@ -1818,6 +1829,26 @@ func updateSet(cols []ColumnDef) string {
 		updates = append(updates, fmt.Sprintf("%s = excluded.%s", safe, safe))
 	}
 	return strings.Join(updates, ", ")
+}
+
+func isStoreBackfillColumn(col ColumnDef) bool {
+	switch col.Name {
+	case "id", "data", "synced_at":
+		return false
+	default:
+		return !col.PrimaryKey
+	}
+}
+
+func hasStoreBackfillColumns(table TableDef) bool {
+	return slices.ContainsFunc(table.Columns, isStoreBackfillColumn)
+}
+
+func storeBackfillDecl(col ColumnDef) string {
+	if strings.TrimSpace(col.Type) == "" {
+		return "TEXT"
+	}
+	return col.Type
 }
 
 func cobraFlagFunc(t string) string {

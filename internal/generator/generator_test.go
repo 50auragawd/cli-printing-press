@@ -1049,6 +1049,109 @@ func TestGenerateStoreUpsertBatchDispatchesToTypedTable(t *testing.T) {
 	runGoCommand(t, outputDir, "test", "./internal/store")
 }
 
+func TestGenerateStoreBackfillsIndexedColumnsOnUpgrade(t *testing.T) {
+	t.Parallel()
+
+	apiSpec := &spec.APISpec{
+		Name:    "indexedupgrade",
+		Version: "0.1.0",
+		BaseURL: "https://api.example.com",
+		Auth:    spec.AuthConfig{Type: "none"},
+		Config: spec.ConfigSpec{
+			Format: "toml",
+			Path:   "~/.config/indexedupgrade-pp-cli/config.toml",
+		},
+		Resources: map[string]spec.Resource{
+			"emails": {
+				Description: "Manage emails",
+				Endpoints: map[string]spec.Endpoint{
+					"list": {
+						Method:      "GET",
+						Path:        "/emails",
+						Description: "List emails",
+						Response:    spec.ResponseDef{Type: "array"},
+						Params: []spec.Param{
+							{Name: "id", Type: "string"},
+							{Name: "email_id", Type: "string"},
+							{Name: "name", Type: "string"},
+							{Name: "description", Type: "string"},
+							{Name: "created_at", Type: "string", Format: "date-time"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
+	gen := New(apiSpec, outputDir)
+	gen.VisionSet = VisionTemplateSet{Store: true}
+	require.NoError(t, gen.Generate())
+
+	storeSrc, err := os.ReadFile(filepath.Join(outputDir, "internal", "store", "store.go"))
+	require.NoError(t, err)
+	src := string(storeSrc)
+	assert.Contains(t, src, `{table: "emails", column: "email_id", decl: "TEXT"}`)
+	assert.Contains(t, src, `{table: "emails", column: "created_at", decl: "DATETIME"}`)
+
+	runGoCommand(t, outputDir, "mod", "tidy")
+	runGoCommand(t, outputDir, "test", "./internal/store")
+}
+
+func TestGenerateStoreQuotesNumericTableAndDerivedIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	apiSpec := &spec.APISpec{
+		Name:    "numericstore",
+		Version: "0.1.0",
+		BaseURL: "https://api.example.com",
+		Auth:    spec.AuthConfig{Type: "none"},
+		Config: spec.ConfigSpec{
+			Format: "toml",
+			Path:   "~/.config/numericstore-pp-cli/config.toml",
+		},
+		Resources: map[string]spec.Resource{
+			"0": {
+				Description: "Manage numeric resources",
+				Endpoints: map[string]spec.Endpoint{
+					"list": {
+						Method:      "GET",
+						Path:        "/0",
+						Description: "List numeric resources",
+						Response:    spec.ResponseDef{Type: "array"},
+						Params: []spec.Param{
+							{Name: "id", Type: "string"},
+							{Name: "replay_id", Type: "string"},
+							{Name: "name", Type: "string"},
+							{Name: "description", Type: "string"},
+							{Name: "message", Type: "string"},
+							{Name: "created_at", Type: "string", Format: "date-time"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
+	gen := New(apiSpec, outputDir)
+	gen.VisionSet = VisionTemplateSet{Store: true}
+	require.NoError(t, gen.Generate())
+
+	storeSrc, err := os.ReadFile(filepath.Join(outputDir, "internal", "store", "store.go"))
+	require.NoError(t, err)
+	src := string(storeSrc)
+	assert.Contains(t, src, `CREATE TABLE IF NOT EXISTS "0"`)
+	assert.Contains(t, src, `CREATE VIRTUAL TABLE IF NOT EXISTS "0_fts"`)
+	assert.Contains(t, src, `CREATE TRIGGER IF NOT EXISTS "0_ai"`)
+	assert.Contains(t, src, `content='0'`)
+	assert.NotContains(t, src, "func (s *Store) upsert0Tx(")
+	assert.Contains(t, src, "func (s *Store) upsertV0Tx(")
+
+	runGoCommand(t, outputDir, "mod", "tidy")
+	runGoCommand(t, outputDir, "test", "./internal/store")
+}
+
 // --- Unit 7: Feature Verification Tests ---
 
 func generatePetstore(t *testing.T) string {

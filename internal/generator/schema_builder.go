@@ -335,13 +335,37 @@ var sqlReservedWords = map[string]bool{
 	"trigger": true, "view": true, "replace": true, "match": true,
 }
 
-// safeSQLName returns the identifier double-quoted if it's a SQL reserved word.
-// Safe to use as a template function for table and column names in SQL DDL.
+// safeSQLName returns an identifier that is safe to use in SQLite DDL.
+// SQLite accepts many names when double-quoted, so quote reserved words and
+// anything that is not a valid bare identifier (for example, names beginning
+// with a digit).
 func safeSQLName(name string) string {
-	if sqlReservedWords[strings.ToLower(name)] {
-		return `"` + name + `"`
+	if sqlReservedWords[strings.ToLower(name)] || !isBareSQLiteIdentifier(name) {
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
 	return name
+}
+
+func isBareSQLiteIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func sqlStringLiteral(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
 // toSnakeCase converts camelCase, PascalCase, or kebab-case to snake_case.

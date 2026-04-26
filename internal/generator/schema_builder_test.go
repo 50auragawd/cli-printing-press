@@ -37,6 +37,27 @@ func TestToSnakeCase(t *testing.T) {
 	}
 }
 
+func TestSafeSQLNameQuotesUnsafeIdentifiers(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "bare identifier", in: "messages", want: "messages"},
+		{name: "reserved word", in: "references", want: `"references"`},
+		{name: "starts with digit", in: "0", want: `"0"`},
+		{name: "derived starts with digit", in: "0_fts", want: `"0_fts"`},
+		{name: "contains punctuation", in: "foo/bar", want: `"foo/bar"`},
+		{name: "escapes quote", in: `foo"bar`, want: `"foo""bar"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, safeSQLName(tt.in))
+		})
+	}
+}
+
 func TestCollectTextFieldNames(t *testing.T) {
 	// Fields like tag/label/category/metadata should be picked up for FTS5
 	// alongside the core text fields. Motivated by the ESPN retro where
