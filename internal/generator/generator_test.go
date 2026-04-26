@@ -138,6 +138,8 @@ func TestGenerateCliutilPackage(t *testing.T) {
 		{"fanout.go", "type FanoutError struct"},
 		{"fanout.go", "type FanoutResult["},
 		{"text.go", "func CleanText("},
+		{"text.go", "func LooksLikeAuthError("},
+		{"text.go", "func SanitizeErrorBody("},
 	} {
 		data, err := os.ReadFile(filepath.Join(cliutilDir, probe.file))
 		require.NoError(t, err)
@@ -2003,15 +2005,15 @@ func TestGeneratedHelpers_AuthErrorWithEnvVarsAndKeyURL(t *testing.T) {
 
 	// 400 auth branch should be emitted
 	assert.Contains(t, content, `HTTP 400`)
-	assert.Contains(t, content, "looksLikeAuthError")
+	assert.Contains(t, content, "cliutil.LooksLikeAuthError")
 	// Env var should appear in error hints
 	assert.Contains(t, content, "STEAM_API_KEY")
 	// Key URL should appear in error hints
 	assert.Contains(t, content, "https://steamcommunity.com/dev/apikey")
 	// Doctor command hint
 	assert.Contains(t, content, "steamauth-pp-cli doctor")
-	// Sanitization helpers should be present
-	assert.Contains(t, content, "sanitizeErrorBody")
+	// Sanitization should route through shared cliutil helper
+	assert.Contains(t, content, "cliutil.SanitizeErrorBody")
 }
 
 func TestGeneratedHelpers_AuthErrorWithEnvVarsNoKeyURL(t *testing.T) {
@@ -2095,7 +2097,7 @@ func TestGeneratedHelpers_BearerTokenAuth(t *testing.T) {
 	assert.Contains(t, content, "check your token")
 	assert.Contains(t, content, "BEARER_TOKEN")
 	// 400 auth branch should be present (bearer_token is auth)
-	assert.Contains(t, content, "looksLikeAuthError")
+	assert.Contains(t, content, "cliutil.LooksLikeAuthError")
 }
 
 func TestGeneratedHelpers_NoAuth_No400Branch(t *testing.T) {
@@ -2132,8 +2134,8 @@ func TestGeneratedHelpers_NoAuth_No400Branch(t *testing.T) {
 	content := string(helpersGo)
 
 	// Should NOT have 400 auth branch
-	assert.NotContains(t, content, "looksLikeAuthError")
-	assert.NotContains(t, content, "sanitizeErrorBody")
+	assert.NotContains(t, content, "LooksLikeAuthError")
+	assert.NotContains(t, content, "SanitizeErrorBody")
 	// Should NOT import regexp
 	assert.NotContains(t, content, `"regexp"`)
 	// classifyAPIError should still exist

@@ -9,54 +9,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-{{- if and .Auth.Type (ne .Auth.Type "none")}}
-	"regexp"
-{{- end}}
 	"strings"
 	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+{{- if and .Auth.Type (ne .Auth.Type "none")}}
+	"{{modulePath}}/internal/cliutil"
+{{- end}}
 	"{{modulePath}}/internal/client"
 	"{{modulePath}}/internal/config"
 {{- if .VisionSet.Store}}
 	"{{modulePath}}/internal/store"
 {{- end}}
 )
-
-{{- if and .Auth.Type (ne .Auth.Type "none")}}
-// looksLikeAuthError checks if an error message body contains auth-related keywords.
-func looksLikeAuthError(msg string) bool {
-	lower := strings.ToLower(msg)
-	patterns := []string{
-		`\bkey\b`,
-		`\btoken\b`,
-		`\bunauthorized\b`,
-		`\bapi_key\b`,
-		`missing.{0,20}key`,
-		`required.{0,20}key`,
-		`\bforbidden\b`,
-		`\bauthenticat`,
-		`\bcredential`,
-	}
-	for _, p := range patterns {
-		if matched, _ := regexp.MatchString(p, lower); matched {
-			return true
-		}
-	}
-	return false
-}
-
-// sanitizeErrorBody truncates and strips credential-shaped strings from error output.
-func sanitizeErrorBody(msg string) string {
-	if len(msg) > 200 {
-		msg = msg[:200] + "..."
-	}
-	credPatterns := regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9]{8,}|sk_live_[a-zA-Z0-9]+|Bearer\s+[a-zA-Z0-9._\-]+|key=[a-zA-Z0-9._\-]+)`)
-	msg = credPatterns.ReplaceAllString(msg, "[REDACTED]")
-	return msg
-}
-{{- end}}
 
 // RegisterTools registers all API operations as MCP tools.
 func RegisterTools(s *server.MCPServer) {
@@ -218,8 +184,8 @@ func makeAPIHandler(method, pathTemplate string, positionalParams []string) serv
 			case strings.Contains(msg, "HTTP 409"):
 				return mcplib.NewToolResultText("already exists (no-op)"), nil
 {{- if and .Auth.Type (ne .Auth.Type "none")}}
-			case strings.Contains(msg, "HTTP 400") && looksLikeAuthError(msg):
-				return mcplib.NewToolResultError("authentication error: " + sanitizeErrorBody(msg) +
+			case strings.Contains(msg, "HTTP 400") && cliutil.LooksLikeAuthError(msg):
+				return mcplib.NewToolResultError("authentication error: " + cliutil.SanitizeErrorBody(msg) +
 					"\nhint: the API rejected the request — this usually means auth is missing or invalid." +
 {{- if .Auth.EnvVars}}
 					{{printf "%q" (printf "\n      Set your API key: export %s=<your-key>" (index .Auth.EnvVars 0))}} +
@@ -230,7 +196,7 @@ func makeAPIHandler(method, pathTemplate string, positionalParams []string) serv
 					{{printf "%q" (printf "\n      Run '%s-pp-cli doctor' to check auth status." .Name)}}), nil
 {{- end}}
 			case strings.Contains(msg, "HTTP 401"):
-				return mcplib.NewToolResultError("authentication failed: " + {{if and .Auth.Type (ne .Auth.Type "none")}}sanitizeErrorBody(msg){{else}}msg{{end}} +
+				return mcplib.NewToolResultError("authentication failed: " + {{if and .Auth.Type (ne .Auth.Type "none")}}cliutil.SanitizeErrorBody(msg){{else}}msg{{end}} +
 {{- if eq .Auth.Type "oauth2"}}
 					{{printf "%q" (printf "\nhint: your token may have expired. Re-run '%s-pp-cli auth login' to re-authenticate" .Name)}} +
 {{- else if eq .Auth.Type "api_key"}}
@@ -248,7 +214,7 @@ func makeAPIHandler(method, pathTemplate string, positionalParams []string) serv
 {{- end}}
 					{{printf "%q" (printf "\n      Run '%s-pp-cli doctor' to check auth status." .Name)}}), nil
 			case strings.Contains(msg, "HTTP 403"):
-				return mcplib.NewToolResultError("permission denied: " + {{if and .Auth.Type (ne .Auth.Type "none")}}sanitizeErrorBody(msg){{else}}msg{{end}} +
+				return mcplib.NewToolResultError("permission denied: " + {{if and .Auth.Type (ne .Auth.Type "none")}}cliutil.SanitizeErrorBody(msg){{else}}msg{{end}} +
 {{- if eq .Auth.Type "oauth2"}}
 					{{printf "%q" (printf "\nhint: your token may lack required scopes. Re-run '%s-pp-cli auth login' to re-authorize" .Name)}} +
 {{- else}}
