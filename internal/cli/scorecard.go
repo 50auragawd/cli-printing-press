@@ -13,6 +13,7 @@ import (
 
 func newScorecardCmd() *cobra.Command {
 	var dir string
+	var researchDir string
 	var specPath string
 	var asJSON bool
 	var liveCheck bool
@@ -26,6 +27,9 @@ func newScorecardCmd() *cobra.Command {
 
   # Include a live behavioral sample (runs novel-feature examples against real targets)
   printing-press scorecard --dir ./generated/stripe-pp-cli --live-check
+
+  # Live-check a CLI whose research.json lives in the run state, not the CLI dir
+  printing-press scorecard --dir ./working/foo-pp-cli --research-dir ./runs/<id> --live-check
 
   # Output as JSON
   printing-press scorecard --dir ./generated/stripe-pp-cli --json`,
@@ -49,8 +53,9 @@ func newScorecardCmd() *cobra.Command {
 			var live *pipeline.LiveCheckResult
 			if liveCheck {
 				live = pipeline.RunLiveCheck(pipeline.LiveCheckOptions{
-					CLIDir:  dir,
-					Timeout: liveCheckTimeout,
+					CLIDir:      dir,
+					ResearchDir: researchDir,
+					Timeout:     liveCheckTimeout,
 				})
 				if insightCap := pipeline.InsightCapFromLiveCheck(live); insightCap != nil && sc.Steinberger.Insight > *insightCap {
 					sc.Steinberger.Insight = *insightCap
@@ -147,6 +152,7 @@ func newScorecardCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dir, "dir", "", "Path to generated CLI directory")
+	cmd.Flags().StringVar(&researchDir, "research-dir", "", "Directory containing research.json (defaults to --dir; useful when the CLI working dir and the run's research.json live in different directories)")
 	cmd.Flags().StringVar(&specPath, "spec", "", "Path to OpenAPI spec JSON for semantic validation")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
 	cmd.Flags().BoolVar(&liveCheck, "live-check", false, "Sample novel-feature examples against real targets and cap Insight when flagships return broken output")

@@ -49,6 +49,38 @@ func TestLiveCheck_UnableWhenNoResearch(t *testing.T) {
 	require.Zero(t, result.Checked())
 }
 
+// TestLiveCheck_ResearchDirOverride verifies that ResearchDir, when set,
+// is used to locate research.json instead of CLIDir. This matters when a
+// CLI's working dir and the run-state's research.json live in different
+// directories — without this option, callers had to copy research.json
+// into the CLI dir as a workaround.
+func TestLiveCheck_ResearchDirOverride(t *testing.T) {
+	cliDir := t.TempDir()      // no research.json here
+	researchDir := t.TempDir() // research.json lives here
+	writeStubBinary(t, cliDir, "bin", `exit 0`)
+	writeTestResearchJSON(t, researchDir, []NovelFeature{
+		{Name: "Feature A", Command: "foo", Description: "no example"},
+	})
+
+	// Default behavior: looks under CLIDir, finds nothing, reports Unable.
+	r1 := RunLiveCheck(LiveCheckOptions{CLIDir: cliDir, BinaryName: "bin", Timeout: time.Second})
+	require.True(t, r1.Unable)
+	require.Contains(t, r1.Reason, "research.json")
+
+	// With ResearchDir: looks at the override, finds research.json. Now the
+	// reason is "no Example commands" — different failure mode, proves we
+	// did locate research.json successfully.
+	r2 := RunLiveCheck(LiveCheckOptions{
+		CLIDir:      cliDir,
+		ResearchDir: researchDir,
+		BinaryName:  "bin",
+		Timeout:     time.Second,
+	})
+	require.True(t, r2.Unable)
+	require.Contains(t, r2.Reason, "Example", "after locating research.json, the next gate is the Example-command check")
+	require.NotContains(t, r2.Reason, "no research.json", "should have read research.json from ResearchDir")
+}
+
 // TestLiveCheck_UnableWhenNoExamples verifies the check skips when research
 // exists but no novel feature has an Example command.
 func TestLiveCheck_UnableWhenNoExamples(t *testing.T) {
@@ -253,6 +285,15 @@ func TestExtractQueryToken(t *testing.T) {
 		{[]string{"tonight", "--max-time", "30m"}, ""},
 		{[]string{"cookbook", "list", "--json"}, ""},
 		{[]string{"cookbook"}, ""},
+		// Verb-shaped command paths: trailing word names the view, not a
+		// search query. Without this, the relevance check would fail
+		// commands like `slices today --json` whose structured output has
+		// no reason to echo the verb.
+		{[]string{"slices", "today", "--json"}, ""},
+		{[]string{"store", "tonight", "--json"}, ""},
+		{[]string{"events", "now"}, ""},
+		{[]string{"orders", "pending", "--json"}, ""},
+		{[]string{"deals", "current"}, ""},
 	}
 	for _, tc := range cases {
 		got := extractQueryToken(tc.args)

@@ -100,9 +100,15 @@ const outputSampleMaxBytes = 4096
 // LiveCheckOptions bundles the optional knobs for RunLiveCheck. CLIDir is
 // required; every other field has a sensible zero-value default.
 type LiveCheckOptions struct {
-	// CLIDir is the printed CLI's root (containing research.json and the
-	// built binary).
+	// CLIDir is the printed CLI's root (which holds the built binary).
 	CLIDir string
+	// ResearchDir, when non-empty, names a directory that holds research.json
+	// instead of CLIDir. Use this when invoking live-check from a working
+	// directory the run state owns (where research.json lives next to the
+	// run's manuscripts) and the printed CLI hasn't been promoted to its
+	// final library location. Leave blank to keep the historical behavior
+	// of looking for research.json under CLIDir.
+	ResearchDir string
 	// BinaryName, when non-empty, names the executable to run. Leave blank
 	// to let RunLiveCheck derive it from CLIDir (tries `<base>-pp-cli`,
 	// falls back to `<base>`).
@@ -129,7 +135,11 @@ func RunLiveCheck(opts LiveCheckOptions) *LiveCheckResult {
 		return out
 	}
 
-	research, err := LoadResearch(opts.CLIDir)
+	researchDir := opts.ResearchDir
+	if researchDir == "" {
+		researchDir = opts.CLIDir
+	}
+	research, err := LoadResearch(researchDir)
 	if err != nil {
 		out.Unable = true
 		out.Reason = "no research.json: " + err.Error()
@@ -530,7 +540,18 @@ func extractQueryToken(args []string) string {
 
 func commonCommandVerb(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
+	// CRUD / action verbs.
 	case "list", "get", "show", "fetch", "query", "search", "create", "update", "delete", "remove", "set", "run":
+		return true
+	// Time / state words used as command names rather than user-supplied
+	// queries. Commands like `slices today`, `store tonight`, `events now`
+	// are verb-shaped: the trailing word names the view, not a search term.
+	// Without this branch, the rendered output (which has no reason to
+	// echo "today" as text — it's structured data) would fail the
+	// outputMentionsQuery heuristic and produce a spurious live-check
+	// failure on otherwise-correct output.
+	case "today", "tonight", "now", "current", "latest", "recent", "upcoming",
+		"pending", "active", "expired", "stale", "all", "live", "open", "closed":
 		return true
 	default:
 		return false
