@@ -573,23 +573,48 @@ func inferPositionalArgs(binary string, cmd *discoveredCommand) {
 	if m == nil {
 		return
 	}
-	rest := string(m[1])
 
-	// Extract <arg> and [arg] placeholders (but not [flags] or [command])
-	placeholderRe := regexp.MustCompile(`[<\[]([a-zA-Z][\w-]*)[>\]]`)
-	matches := placeholderRe.FindAllStringSubmatch(rest, -1)
-	if len(matches) == 0 {
-		return
+	for _, name := range extractPositionalPlaceholders(string(m[1])) {
+		cmd.Args = append(cmd.Args, syntheticArgValue(name))
 	}
+}
 
+// flagDescriptorRe matches a bracketed token whose body looks like a flag
+// descriptor rather than an optional positional. The body starts with one
+// or more leading dashes, or contains an `=` sign (e.g., `[--tags=<csv>]`,
+// `[--stdin]`, `[-v]`). Without scrubbing these first, the placeholder
+// regex picks up `<csv>` from such tokens as if it were a separate
+// positional, which then gets passed to the binary and breaks
+// `cobra.MaximumNArgs(1)` validators on commands that accept exactly one
+// real positional. See retro #301 finding F2.
+var flagDescriptorRe = regexp.MustCompile(`\[\s*-+[^\]]*\]|\[[^\]]*=[^\]]*\]`)
+
+// positionalPlaceholderRe extracts <name> and [name] placeholders from the
+// scrubbed Usage suffix. Runs after flagDescriptorRe.
+var positionalPlaceholderRe = regexp.MustCompile(`[<\[]([a-zA-Z][\w-]*)[>\]]`)
+
+// extractPositionalPlaceholders returns the placeholder names found in a
+// cobra Usage suffix (the part after `Usage:\n  cli-name cmd-name`).
+// It strips bracketed flag descriptors first so tokens like `[--tags=<csv>]`
+// don't contribute `<csv>` as a phantom positional, then drops cobra's
+// built-in `[flags]` / `[command]` placeholders.
+//
+// Returns lowercase placeholder names in source order.
+func extractPositionalPlaceholders(usageSuffix string) []string {
+	scrubbed := flagDescriptorRe.ReplaceAllString(usageSuffix, "")
+	matches := positionalPlaceholderRe.FindAllStringSubmatch(scrubbed, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	var names []string
 	for _, match := range matches {
 		name := strings.ToLower(match[1])
-		// Skip cobra built-in placeholders
 		if name == "flags" || name == "command" {
 			continue
 		}
-		cmd.Args = append(cmd.Args, syntheticArgValue(name))
+		names = append(names, name)
 	}
+	return names
 }
 
 // syntheticArgValue maps a positional arg placeholder name to a synthetic test value.

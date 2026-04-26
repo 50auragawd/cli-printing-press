@@ -351,6 +351,76 @@ func main() {}
 	assert.FileExists(t, binaryPath)
 }
 
+// TestExtractPositionalPlaceholders covers the placeholder extractor used
+// by inferPositionalArgs. The bracketed-flag-descriptor cases are the
+// retro #301 F2 regression: cobra Use strings like
+// `save <url> [--tags=<csv>] [--stdin]` were leaking `<csv>` as a phantom
+// positional, which then violated MaximumNArgs(1) on save.
+func TestExtractPositionalPlaceholders(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage string
+		want  []string
+	}{
+		{
+			name:  "single required positional",
+			usage: " <url> [flags]",
+			want:  []string{"url"},
+		},
+		{
+			name:  "single optional positional",
+			usage: " [id] [flags]",
+			want:  []string{"id"},
+		},
+		{
+			name:  "required plus optional positional",
+			usage: " <id> [extra] [flags]",
+			want:  []string{"id", "extra"},
+		},
+		{
+			name:  "no positionals",
+			usage: " [flags]",
+			want:  nil,
+		},
+		{
+			name:  "skips [command]",
+			usage: " [command] [flags]",
+			want:  nil,
+		},
+		{
+			name:  "F2: bracketed flag descriptor with placeholder is not a positional",
+			usage: " <url> [--tags=<csv>] [--stdin] [flags]",
+			want:  []string{"url"},
+		},
+		{
+			name:  "F2: multiple bracketed flag descriptors",
+			usage: " [--name=<n>] [--limit=<int>] [flags]",
+			want:  nil,
+		},
+		{
+			name:  "F2: short-form flag descriptor",
+			usage: " <q> [-v] [flags]",
+			want:  []string{"q"},
+		},
+		{
+			name:  "F2: spaced flag descriptor body",
+			usage: " <id> [ --debug ] [flags]",
+			want:  []string{"id"},
+		},
+		{
+			name:  "lowercases names",
+			usage: " <Region> [flags]",
+			want:  []string{"region"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractPositionalPlaceholders(tt.usage)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestSyntheticArgValue(t *testing.T) {
 	tests := []struct {
 		name     string
