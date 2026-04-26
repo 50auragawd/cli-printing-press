@@ -19,7 +19,6 @@ import (
 	"printing-press-golden-pp-cli/internal/config"
 	"printing-press-golden-pp-cli/internal/store"
 )
-
 // looksLikeAuthError checks if an error message body contains auth-related keywords.
 func looksLikeAuthError(msg string) bool {
 	lower := strings.ToLower(msg)
@@ -58,14 +57,14 @@ func RegisterTools(s *server.MCPServer) {
 		mcplib.NewTool("projects_create",
 			mcplib.WithDescription("Create project Returns Project."),
 		),
-		makeAPIHandler("POST", "/projects", []string{}),
+		makeAPIHandler("POST", "/projects", []string{ }),
 	)
 	s.AddTool(
 		mcplib.NewTool("projects_get",
 			mcplib.WithDescription("Get project"),
 			mcplib.WithString("projectId", mcplib.Required(), mcplib.Description("Project id")),
 		),
-		makeAPIHandler("GET", "/projects/{projectId}", []string{"projectId"}),
+		makeAPIHandler("GET", "/projects/{projectId}", []string{"projectId", }),
 	)
 	s.AddTool(
 		mcplib.NewTool("projects_list",
@@ -74,7 +73,7 @@ func RegisterTools(s *server.MCPServer) {
 			mcplib.WithString("limit", mcplib.Description("Limit")),
 			mcplib.WithString("cursor", mcplib.Description("Cursor")),
 		),
-		makeAPIHandler("GET", "/projects", []string{}),
+		makeAPIHandler("GET", "/projects", []string{ }),
 	)
 	s.AddTool(
 		mcplib.NewTool("projects_tasks_list-project",
@@ -84,7 +83,7 @@ func RegisterTools(s *server.MCPServer) {
 			mcplib.WithString("limit", mcplib.Description("Limit")),
 			mcplib.WithString("cursor", mcplib.Description("Cursor")),
 		),
-		makeAPIHandler("GET", "/projects/{projectId}/tasks", []string{"projectId"}),
+		makeAPIHandler("GET", "/projects/{projectId}/tasks", []string{"projectId", }),
 	)
 	s.AddTool(
 		mcplib.NewTool("projects_tasks_update-project",
@@ -92,13 +91,13 @@ func RegisterTools(s *server.MCPServer) {
 			mcplib.WithString("projectId", mcplib.Required(), mcplib.Description("Project id")),
 			mcplib.WithString("taskId", mcplib.Required(), mcplib.Description("Task id")),
 		),
-		makeAPIHandler("PATCH", "/projects/{projectId}/tasks/{taskId}", []string{"projectId", "taskId"}),
+		makeAPIHandler("PATCH", "/projects/{projectId}/tasks/{taskId}", []string{"projectId","taskId", }),
 	)
 	s.AddTool(
 		mcplib.NewTool("public_get-status",
 			mcplib.WithDescription("Get public service status (public)"),
 		),
-		makeAPIHandler("GET", "/public/status", []string{}),
+		makeAPIHandler("GET", "/public/status", []string{ }),
 	)
 	// Sync tool — populates local database for offline search and sql queries
 	s.AddTool(
@@ -249,7 +248,6 @@ func dbPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", "printing-press-golden-pp-cli", "data.db")
 }
-
 // Note: MCP tools use their own dbPath() because they are in a separate package (main, not cli).
 // The CLI's defaultDBPath() in the cli package uses the same canonical path.
 
@@ -311,21 +309,21 @@ func handleContext(_ context.Context, _ mcplib.CallToolRequest) (*mcplib.CallToo
 		"archetype":   "project-management",
 		"tool_count":  6,
 		"auth": map[string]any{
-			"type":     "api_key",
-			"env_vars": []string{"PRINTING_PRESS_GOLDEN_API_KEY_AUTH"},
+			"type": "api_key",
+			"env_vars": []string{"PRINTING_PRESS_GOLDEN_API_KEY_AUTH",  },
 		},
 		"resources": []map[string]any{
 			{
-				"name":        "projects",
+				"name": "projects",
 				"description": "Manage projects",
-				"endpoints":   []string{"create", "get", "list"},
-				"syncable":    true,
-				"searchable":  true,
+				"endpoints": []string{"create", "get", "list",  },
+				"syncable": true,
+				"searchable": true,
 			},
 			{
-				"name":        "public",
+				"name": "public",
 				"description": "Manage public",
-				"endpoints":   []string{"get-status"},
+				"endpoints": []string{"get-status",  },
 			},
 		},
 		"query_tips": []string{

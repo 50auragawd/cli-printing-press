@@ -15,11 +15,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"printing-press-golden-pp-cli/internal/config"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"printing-press-golden-pp-cli/internal/config"
 )
 
 type Client struct {
@@ -116,6 +116,8 @@ func (l *adaptiveLimiter) Rate() float64 {
 	defer l.mu.Unlock()
 	return l.rate
 }
+
+
 
 // APIError carries HTTP status information for structured exit codes.
 type APIError struct {
@@ -512,6 +514,7 @@ func sanitizeJSONResponse(body []byte) []byte {
 	}
 	return body
 }
+
 
 // maskToken redacts all but the last 4 characters of a token for safe display.
 func maskToken(token string) string {

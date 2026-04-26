@@ -3,29 +3,31 @@
 
 package types
 
+
 type CreateProjectRequest struct {
-	Name       string `json:"name"`
+	Name string `json:"name"`
 	OwnerEmail string `json:"owner_email"`
 	Visibility string `json:"visibility"`
 }
 
 type Project struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
+	Id string `json:"id"`
+	Name string `json:"name"`
+	Status string `json:"status"`
 	Visibility string `json:"visibility"`
 }
 
 type Task struct {
-	DueAt     string `json:"due_at"`
-	Id        string `json:"id"`
-	Priority  string `json:"priority"`
+	DueAt string `json:"due_at"`
+	Id string `json:"id"`
+	Priority string `json:"priority"`
 	ProjectId string `json:"project_id"`
-	Title     string `json:"title"`
+	Title string `json:"title"`
 }
 
 type UpdateTaskRequest struct {
-	Completed bool   `json:"completed"`
-	Priority  string `json:"priority"`
-	Title     string `json:"title"`
+	Completed bool `json:"completed"`
+	Priority string `json:"priority"`
+	Title string `json:"title"`
 }
+
