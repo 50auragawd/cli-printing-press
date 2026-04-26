@@ -33,6 +33,13 @@ type ReimplementationCheckResult struct {
 	// ExemptedViaStore is the number of commands that passed the check
 	// by consulting the local store package (SQLite-derived features).
 	ExemptedViaStore int `json:"exempted_via_store"`
+	// ExemptedViaAnnotation is the number of commands that passed the
+	// check via the // pp:novel-static-reference marker (curated
+	// static-data features like substitution tables, holiday lists).
+	// Tracked separately from ExemptedViaStore so analytics over
+	// dogfood-results.json can distinguish the two carve-out classes
+	// even though they share the same ship/no-ship decision.
+	ExemptedViaAnnotation int `json:"exempted_via_annotation,omitempty"`
 	// Suspicious is the list of commands whose files show no client
 	// call and no store access - the candidate hand-rolled responses.
 	Suspicious []ReimplementationFinding `json:"suspicious,omitempty"`
@@ -169,9 +176,13 @@ func checkReimplementation(cliDir, researchDir string) ReimplementationCheckResu
 		// and take the most favorable classification - any single file
 		// with the right signals vindicates the command.
 		result.Checked++
-		finding, exempt, ok := classifyReimplementation(files, fileContent, storeHelpers)
-		if exempt {
+		finding, kind, ok := classifyReimplementation(files, fileContent, storeHelpers)
+		switch kind {
+		case exemptStore:
 			result.ExemptedViaStore++
+			continue
+		case exemptAnnotation:
+			result.ExemptedViaAnnotation++
 			continue
 		}
 		if !ok {
@@ -187,19 +198,52 @@ func checkReimplementation(cliDir, researchDir string) ReimplementationCheckResu
 	return result
 }
 
+// novelStaticReferenceRe matches the per-command opt-out marker
+// documented in AGENTS.md. A line of the form
+//
+//	// pp:novel-static-reference
+//
+// (any leading whitespace, optional " " before the directive) anywhere
+// in a command's source file declares that the command intentionally
+// ships curated static data — substitution tables, holiday lists,
+// currency metadata, conversion factors — rather than calling an API
+// or reading from the local store. The reimplementation check honors
+// the marker and exempts the command, treating it on the same footing
+// as the existing store/client carve-outs.
+//
+// Added for retro #301 finding F3.
+var novelStaticReferenceRe = regexp.MustCompile(`(?m)^\s*//\s*pp:novel-static-reference\b`)
+
+// exemptionKind labels which carve-out vindicated a command, so the
+// caller can route the bump to the right counter on
+// ReimplementationCheckResult. exemptNone covers both "passes via
+// client signal" (ok=true, kind=exemptNone) and "is suspicious"
+// (ok=false, kind=exemptNone) — the kind only carries meaning when
+// the result is exempt.
+type exemptionKind int
+
+const (
+	exemptNone exemptionKind = iota
+	exemptStore
+	exemptAnnotation
+)
+
 // classifyReimplementation returns the best classification across the
 // set of files that implement a single command. The rules, in order:
 //
-//  1. If any file shows a store signal, the command is exempted as a
-//     local-SQLite feature. Return (_, true, true).
-//  2. If any file shows a client signal, the command is fine. Return
-//     (_, false, true).
-//  3. Otherwise the command is suspicious. Return a ReimplementationFinding
-//     naming the primary file and a reason. Return (finding, false, false).
+//  1. If any file carries the `// pp:novel-static-reference` marker,
+//     the command is exempted as an intentional static-data feature.
+//     Return (_, exemptAnnotation, true).
+//  2. If any file shows a store signal, the command is exempted as a
+//     local-SQLite feature. Return (_, exemptStore, true).
+//  3. If any file shows a client signal, the command is fine. Return
+//     (_, exemptNone, true).
+//  4. Otherwise the command is suspicious. Return a ReimplementationFinding
+//     naming the primary file and a reason. Return (finding, exemptNone, false).
 //
-// The trivial-body regex is consulted only when rule 3 fires, to pick
+// The trivial-body regex is consulted only when rule 4 fires, to pick
 // between "empty stub" and "hand-rolled response" as the reason.
-func classifyReimplementation(files []string, fileContent map[string]string, storeHelpers map[string]bool) (ReimplementationFinding, bool, bool) {
+func classifyReimplementation(files []string, fileContent map[string]string, storeHelpers map[string]bool) (ReimplementationFinding, exemptionKind, bool) {
 	hasClient := false
 	hasTrivialBody := false
 	primaryFile := files[0]
@@ -208,11 +252,14 @@ func classifyReimplementation(files []string, fileContent map[string]string, sto
 		if !ok {
 			continue
 		}
+		if novelStaticReferenceRe.MatchString(content) {
+			return ReimplementationFinding{File: f}, exemptAnnotation, true
+		}
 		if hasStoreSignal(content) {
-			return ReimplementationFinding{File: f}, true, true
+			return ReimplementationFinding{File: f}, exemptStore, true
 		}
 		if callsStoreHelper(content, storeHelpers) {
-			return ReimplementationFinding{File: f}, true, true
+			return ReimplementationFinding{File: f}, exemptStore, true
 		}
 		if hasClientSignal(content) {
 			hasClient = true
@@ -222,13 +269,13 @@ func classifyReimplementation(files []string, fileContent map[string]string, sto
 		}
 	}
 	if hasClient {
-		return ReimplementationFinding{File: primaryFile}, false, true
+		return ReimplementationFinding{File: primaryFile}, exemptNone, true
 	}
 	reason := "hand-rolled response: no API client call, no store access"
 	if hasTrivialBody {
 		reason = "empty body: no implementation"
 	}
-	return ReimplementationFinding{File: primaryFile, Reason: reason}, false, false
+	return ReimplementationFinding{File: primaryFile, Reason: reason}, exemptNone, false
 }
 
 func hasStoreSignal(content string) bool {

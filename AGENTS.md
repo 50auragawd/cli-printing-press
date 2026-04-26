@@ -28,12 +28,13 @@ Concretely, the generator and review loop reject:
 - Aggregations computed in-process when the API has an aggregation endpoint
 - Enum mappings and reference data synthesized locally when the API returns them
 
-Two carve-outs are legitimate:
+Three carve-outs are legitimate:
 
 - Commands that read from the generated `internal/store` package to join or query sync'd data (the `stale`, `bottleneck`, `health`, `reconcile` family). These are local-data commands, not fake API calls.
 - Commands that cache an API response in the store after calling it. Presence of both a client call and a store call is fine.
+- Commands whose data is the curated content itself — substitution tables, holiday lists, currency metadata, conversion factors. The data IS the feature; calling an API or hitting the store would be wrong. Opt in by adding the directive `// pp:novel-static-reference` anywhere in the command's source file (typically near the package-level data declaration). The reimplementation check exempts the command on the same footing as the store/client carve-outs.
 
-The rule is enforced in two places. The absorb manifest has a Kill Check (see `skills/printing-press/references/absorb-scoring.md`) that rejects reimplementation candidates before they enter the feature list. Dogfood runs `reimplementation_check` over every built novel-feature command and flags any handler file that shows neither a client call nor a store access.
+The rule is enforced in two places. The absorb manifest has a Kill Check (see `skills/printing-press/references/absorb-scoring.md`) that rejects reimplementation candidates before they enter the feature list. Dogfood runs `reimplementation_check` over every built novel-feature command and flags any handler file that shows neither a client call nor a store access (and lacks the static-reference opt-out).
 
 ## Build, Test & Lint
 

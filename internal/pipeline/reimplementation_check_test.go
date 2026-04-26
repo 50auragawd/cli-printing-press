@@ -441,3 +441,105 @@ func TestCheckReimplementation_NoNovelFeatures_Skipped(t *testing.T) {
 		t.Errorf("expected Skipped=true, got %#v", got)
 	}
 }
+
+// TestCheckReimplementation_NovelStaticReferenceMarker_Exempted is the
+// regression guard for retro #301 finding F3: a novel feature that
+// intentionally ships curated static data (substitution tables, holiday
+// lists, currency metadata) has no API client call and no store call,
+// because the data IS the feature. Before the F3 fix, dogfood flagged
+// these as "hand-rolled response: no API client call, no store access"
+// even when they were the kind of feature explicitly approved during
+// Phase 1.5. The `// pp:novel-static-reference` marker in the file
+// header opts the command out of the reimplementation check.
+func TestCheckReimplementation_NovelStaticReferenceMarker_Exempted(t *testing.T) {
+	files := map[string]string{
+		"sub.go": `package cli
+
+// pp:novel-static-reference
+//
+// Substitution lookups are a curated static-data feature; the data is
+// shipped as a hardcoded table with no API or store backing.
+
+import "github.com/spf13/cobra"
+
+var subTable = map[string][]string{
+	"buttermilk": {"milk + lemon juice", "milk + vinegar", "yogurt"},
+	"eggs":       {"flax meal + water", "applesauce"},
+}
+
+func newSubCmd(flags *rootFlags) *cobra.Command {
+	return &cobra.Command{
+		Use: "sub",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = subTable
+			return nil
+		},
+	}
+}
+`,
+	}
+	cliDir, pipelineDir := seedReimplementationFixture(t, files, []NovelFeature{
+		{Name: "Substitution lookup", Command: "sub"},
+	})
+
+	got := checkReimplementation(cliDir, pipelineDir)
+	if got.Checked != 1 {
+		t.Fatalf("Checked: want 1, got %d", got.Checked)
+	}
+	if got.ExemptedViaAnnotation != 1 {
+		t.Fatalf("ExemptedViaAnnotation: want 1 (marker should exempt), got %d", got.ExemptedViaAnnotation)
+	}
+	if got.ExemptedViaStore != 0 {
+		t.Errorf("ExemptedViaStore: want 0 (annotation is its own carve-out, not store), got %d", got.ExemptedViaStore)
+	}
+	if len(got.Suspicious) != 0 {
+		t.Fatalf("Suspicious: want 0, got %d (%v)", len(got.Suspicious), got.Suspicious)
+	}
+}
+
+// TestCheckReimplementation_WithoutMarker_StillFlagged confirms the
+// F3 fix doesn't silently exempt commands that lack the explicit
+// `// pp:novel-static-reference` marker. Same shape as the test above
+// but without the comment — must still be flagged.
+func TestCheckReimplementation_WithoutMarker_StillFlagged(t *testing.T) {
+	files := map[string]string{
+		"sub.go": `package cli
+
+import "github.com/spf13/cobra"
+
+var subTable = map[string][]string{
+	"buttermilk": {"milk + lemon juice"},
+}
+
+func newSubCmd(flags *rootFlags) *cobra.Command {
+	return &cobra.Command{
+		Use: "sub",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = subTable
+			return nil
+		},
+	}
+}
+`,
+	}
+	cliDir, pipelineDir := seedReimplementationFixture(t, files, []NovelFeature{
+		{Name: "Substitution lookup", Command: "sub"},
+	})
+
+	got := checkReimplementation(cliDir, pipelineDir)
+	if got.Checked != 1 {
+		t.Fatalf("Checked: want 1, got %d", got.Checked)
+	}
+	if got.ExemptedViaAnnotation != 0 {
+		t.Fatalf("ExemptedViaAnnotation: want 0 (no marker), got %d", got.ExemptedViaAnnotation)
+	}
+	if got.ExemptedViaStore != 0 {
+		t.Fatalf("ExemptedViaStore: want 0 (no store signal either), got %d", got.ExemptedViaStore)
+	}
+	if len(got.Suspicious) != 1 {
+		t.Fatalf("Suspicious: want 1, got %d", len(got.Suspicious))
+	}
+	if !strings.Contains(got.Suspicious[0].Reason, "no API client call") {
+		t.Errorf("expected hand-rolled-response reason, got %q", got.Suspicious[0].Reason)
+	}
+}
