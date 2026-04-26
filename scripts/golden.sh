@@ -15,6 +15,7 @@ cases_root="testdata/golden/cases"
 expected_root="testdata/golden/expected"
 actual_root=".gotmp/golden/actual"
 actual_abs="$repo_root/$actual_root"
+golden_owner="printing-press-golden"
 
 escape_sed() {
   printf "%s" "$1" | sed -e 's/[\/&|]/\\&/g'
@@ -115,6 +116,9 @@ run_case() {
   command_text="$(cat "$case_dir/command.txt")"
 
   BINARY="$binary" CASE_ACTUAL_DIR="$out_dir" REPO_ROOT="$repo_root" \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=github.user \
+    GIT_CONFIG_VALUE_0="$golden_owner" \
     bash -c "$command_text" >"$raw_stdout" 2>"$raw_stderr" || exit_code=$?
 
   normalize_text <"$raw_stdout" >"$out_dir/stdout.txt"
