@@ -1656,6 +1656,34 @@ resources:
 		assert.Contains(t, err.Error(), `"feedback"`)
 		assert.Contains(t, err.Error(), "reserved Printing Press template")
 		assert.Contains(t, err.Error(), "Rename")
+		assert.Contains(t, err.Error(), "newFeedbackCmd", "error names the actual generated function")
+		assert.Contains(t, err.Error(), `"feedback_resource"`, "error suggests a concrete rename")
+	})
+
+	t.Run("multi-word reserved name produces correct PascalCase function name", func(t *testing.T) {
+		t.Parallel()
+		input := `name: testapi
+base_url: https://api.example.com
+auth:
+  type: bearer_token
+  env_vars: [TESTAPI_TOKEN]
+resources:
+  agent_context:
+    description: Should be rejected
+    endpoints:
+      list:
+        method: GET
+        path: /agent_context
+        description: list
+`
+		_, err := ParseBytes([]byte(input))
+		require.Error(t, err)
+		// The error must name the actual generated function — newAgentContextCmd —
+		// not newAgent_contextCmd. The previous capitalize-first variant lied
+		// about the function name, which would confuse users debugging the
+		// collision.
+		assert.Contains(t, err.Error(), "newAgentContextCmd")
+		assert.NotContains(t, err.Error(), "newAgent_contextCmd")
 	})
 
 	t.Run("auth resource name rejected", func(t *testing.T) {
@@ -1780,4 +1808,27 @@ resources:
 	s, err := ParseBytes([]byte(input))
 	require.NoError(t, err)
 	assert.Empty(t, s.CLIDescription, "field should be empty when not declared")
+}
+
+func TestSnakeToPascal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input, expected string
+	}{
+		{"feedback", "Feedback"},
+		{"agent_context", "AgentContext"},
+		{"customer_feedback", "CustomerFeedback"},
+		{"a_b_c", "ABC"},
+		{"already_PascalCase", "AlreadyPascalCase"},
+		{"", ""},
+		{"_leading", "Leading"},
+		{"trailing_", "Trailing"},
+		{"single", "Single"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, snakeToPascal(tt.input))
+		})
+	}
 }
