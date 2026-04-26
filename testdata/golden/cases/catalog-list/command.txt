@@ -1,1 +1,1 @@
-./printing-press catalog list
+"$BINARY" catalog list

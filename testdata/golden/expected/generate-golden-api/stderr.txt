@@ -1,0 +1,1 @@
+Generated printing-press-golden at <ARTIFACT_DIR>/generate-golden-api/printing-press-golden

@@ -1,1 +1,1 @@
-./printing-press catalog show petstore
+"$BINARY" catalog show petstore

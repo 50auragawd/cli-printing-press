@@ -1,0 +1,224 @@
+openapi: "3.0.3"
+info:
+  title: Printing Press Golden API
+  version: "2026.04"
+  description: Purpose-built fixture for golden generation coverage.
+servers:
+  - url: https://api.golden.example/v1
+security:
+  - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    ApiVersion:
+      name: X-Api-Version
+      in: header
+      required: true
+      schema:
+        type: string
+        default: "2026-04-01"
+      description: Required API version header.
+    RequestID:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional per-request correlation ID.
+  schemas:
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, archived]
+        visibility:
+          type: string
+          enum: [private, team, public]
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        title:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high]
+        due_at:
+          type: string
+          format: date-time
+    CreateProjectRequest:
+      type: object
+      required: [name, visibility]
+      properties:
+        name:
+          type: string
+        visibility:
+          type: string
+          enum: [private, team, public]
+        owner_email:
+          type: string
+          format: email
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high]
+        completed:
+          type: boolean
+paths:
+  /public/status:
+    get:
+      tags: [status]
+      operationId: getPublicStatus
+      summary: Get public service status
+      security: []
+      responses:
+        "200":
+          description: OK
+  /projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List projects
+      parameters:
+        - $ref: "#/components/parameters/ApiVersion"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, active, archived]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 25
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create project
+      parameters:
+        - $ref: "#/components/parameters/ApiVersion"
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /projects/{projectId}:
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Get project
+      parameters:
+        - $ref: "#/components/parameters/ApiVersion"
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /projects/{projectId}/tasks:
+    get:
+      tags: [tasks]
+      operationId: listProjectTasks
+      summary: List project tasks
+      parameters:
+        - $ref: "#/components/parameters/ApiVersion"
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low, normal, high]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+  /projects/{projectId}/tasks/{taskId}:
+    patch:
+      tags: [tasks]
+      operationId: updateProjectTask
+      summary: Update project task
+      parameters:
+        - $ref: "#/components/parameters/ApiVersion"
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: OK

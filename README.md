@@ -458,7 +458,7 @@ A pre-push lefthook hook runs `golangci-lint` on changed files; the same config 
 
 ### Golden Output Harness
 
-Golden output checks compare deterministic, offline `printing-press` commands against committed stdout, stderr, and exit-code fixtures:
+Golden output checks compare deterministic, offline `printing-press` commands against committed stdout, stderr, exit-code, and selected artifact fixtures:
 
 ```bash
 scripts/golden.sh verify
@@ -470,7 +470,9 @@ Use update mode only after an intentional behavior change:
 scripts/golden.sh update
 ```
 
-The harness rebuilds `./printing-press`, writes actual outputs under `.gotmp/golden/actual`, and compares them to `testdata/golden/expected`. It normalizes only machine-specific paths: the repo root, the home directory, and the golden artifact directory.
+The harness rebuilds `./printing-press`, writes actual outputs under `.gotmp/golden/actual`, and compares them to `testdata/golden/expected`. Cases live under `testdata/golden/cases/<case-name>/`; `command.txt` defines the offline command, and `artifacts.txt` lists behaviorally important generated files to compare. Normalization is intentionally narrow: machine-specific paths, deterministic JSON formatting, and known provenance fields like generated timestamps. CI runs this as a separate `Golden` workflow, not inside `go test ./...`.
+
+The generated-CLI golden uses `testdata/golden/fixtures/golden-api.yaml`, a purpose-built OpenAPI fixture for the Printing Press. Extend that fixture when the machine gains new deterministic generation capabilities that should be protected by artifact goldens. Update mode refuses dirty worktrees unless `GOLDEN_ALLOW_DIRTY=1` is set, so fixture churn stays intentional.
 
 ## Credits
 

@@ -51,6 +51,26 @@ A pre-commit hook runs `gofmt -w` on staged Go files automatically. A pre-push h
 
 **IMPORTANT: Always use relative paths for build output.** Never build to `/tmp` or any shared absolute path. Multiple worktrees run concurrently and will stomp on each other. Use `./printing-press` exactly as shown above.
 
+## Golden Output Harness
+
+The golden harness is a byte-level behavior check for deterministic, offline `printing-press` commands and generated artifacts. It complements unit tests by catching user-visible output drift and printed CLI artifact drift.
+
+Run `scripts/golden.sh verify` whenever a change may affect CLI command output, catalog rendering, browser-sniff or crowd-sniff output, generated specs or generated printed CLI files, templates under `internal/generator/templates/`, naming, endpoint derivation, auth emission, manifest generation, scorecard output, or pipeline artifacts.
+
+If a refactor changes machine code but claims behavior is identical, `scripts/golden.sh verify` should pass without fixture updates.
+
+Run `scripts/golden.sh update` only when the behavior/output change is intentional. After updating, inspect the diffs manually and explain in the final response why the golden changes are expected. Never update goldens just to make a failing check pass.
+
+Golden cases must be deterministic, offline, and auth-free. Do not add cases that depend on network access, user credentials or env vars, `~/printing-press`, wall-clock timestamps unless normalized, machine-specific absolute paths unless normalized, or large generated printed CLI trees unless the compared subset is intentional.
+
+To add a case, create `testdata/golden/cases/<case-name>/`, add expected outputs under `testdata/golden/expected/<case-name>/`, and list behaviorally important generated files in `artifacts.txt` when the command creates artifacts. Prefer a small, high-signal artifact subset over snapshotting huge trees.
+
+Maintain `testdata/golden/fixtures/golden-api.yaml` as the purpose-built generated-CLI fixture for the Printing Press. When the machine gains deterministic generation capabilities that should survive major refactors — for example new auth shapes, pagination contracts, MCP surfaces, manifest fields, or endpoint naming rules — extend this fixture and add the smallest useful artifact comparison that proves the capability. Do not mutate this fixture for one printed CLI's edge case unless it represents a general machine behavior.
+
+If `verify` fails, inspect `.gotmp/golden/actual/<case-name>/` and the generated `.diff` files. Decide whether the change is a regression or an intentional behavior change. If it is a regression, fix code. If it is intentional, run `scripts/golden.sh update`, review fixture diffs, and mention the golden update in the final summary.
+
+Golden verification does not replace `go test ./...`, `go vet ./...`, `golangci-lint run ./...`, or `go build -o ./printing-press ./cmd/printing-press`. It is an additional check for behavior-sensitive changes and runs in CI as a separate `Golden` workflow, not as part of `go test ./...`.
+
 ## Project Structure
 
 - `cmd/printing-press/` - CLI entry point

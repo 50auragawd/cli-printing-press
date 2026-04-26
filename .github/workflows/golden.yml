@@ -1,0 +1,21 @@
+name: Golden
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify golden outputs
+        run: scripts/golden.sh verify
