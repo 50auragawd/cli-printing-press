@@ -38,14 +38,17 @@ func isInternalYAMLSpec(data []byte) bool {
 }
 
 // internalSpecToDogfoodSpec converts a parsed internal YAML APISpec into the
-// openAPISpec struct used by dogfood/verify.
+// openAPISpec struct used by dogfood/verify. Sets IsInternalYAML so
+// downstream checks (notably path-validity) can skip rules that only
+// make sense for OpenAPI-derived path patterns.
 func internalSpecToDogfoodSpec(s *apispec.APISpec) *openAPISpec {
 	return &openAPISpec{
-		Paths:         collectInternalSpecPaths(s),
-		Auth:          s.Auth,
-		Kind:          s.Kind,
-		HTTPTransport: s.EffectiveHTTPTransport(),
-		ParamDefaults: collectInternalSpecParamDefaults(s),
+		Paths:          collectInternalSpecPaths(s),
+		Auth:           s.Auth,
+		Kind:           s.Kind,
+		HTTPTransport:  s.EffectiveHTTPTransport(),
+		ParamDefaults:  collectInternalSpecParamDefaults(s),
+		IsInternalYAML: true,
 	}
 }
 

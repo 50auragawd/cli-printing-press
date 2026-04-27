@@ -67,9 +67,14 @@ resources:
 	require.Empty(t, report.PathCheck.Invalid)
 }
 
-// TestRESTSpec_DogfoodStillChecksPaths ensures the default (non-synthetic)
-// behavior is unchanged: specs without `kind: synthetic` still get the strict
-// path-validity check. Guards against over-broad application of the skip.
+// TestRESTSpec_DogfoodStillChecksPaths originally guarded against over-broad
+// application of the synthetic-spec path-validity skip. After hackernews retro
+// #350 finding F8, internal-yaml specs (synthetic OR plain REST) skip the
+// path-validity check by default — the OpenAPI-derived path matcher produces
+// "0/0 valid (FAIL)" against perfectly valid internal-yaml CLIs while the
+// scorecard's parallel check correctly records the dimension as unscored. This
+// test now asserts the broader skip behavior; OpenAPI specs (a separate
+// fixture flow) still run the check.
 func TestRESTSpec_DogfoodStillChecksPaths(t *testing.T) {
 	t.Parallel()
 
@@ -112,9 +117,12 @@ resources:
 	report, err := RunDogfood(dir, specPath)
 	require.NoError(t, err)
 
-	// Default rest spec should run the path check and find the /widgets path.
-	require.Greater(t, report.PathCheck.Tested, 0,
-		"rest spec should run the path check (Tested > 0)")
+	// Internal-yaml specs (synthetic or plain REST) skip the OpenAPI-shaped
+	// path check. Confirms the broader skip from retro #350 finding F8.
+	require.True(t, report.PathCheck.Skipped,
+		"internal-yaml rest spec should skip path-validity")
+	require.Contains(t, report.PathCheck.Detail, "internal-yaml",
+		"detail should explain the skip reason")
 }
 
 // TestSyntheticSpec_ScorecardMarksPathValidityUnscored verifies scorecard

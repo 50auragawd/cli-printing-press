@@ -182,6 +182,14 @@ type openAPISpec struct {
 	// only for internal-format specs; OpenAPI specs leave this nil and
 	// fall through to the generic `canonicalargs` registry.
 	ParamDefaults map[string]string
+	// IsInternalYAML is true when this spec was loaded from the
+	// printing-press internal YAML format rather than OpenAPI. Internal
+	// YAML expresses paths in its own shape — the OpenAPI-derived path-
+	// validity check produces noisy false positives against it (often
+	// "0/0 valid (FAIL)" while the scorecard's parallel check correctly
+	// records the dimension as unscored). Surfaced by hackernews retro
+	// #350 finding F8.
+	IsInternalYAML bool
 }
 
 func (s *openAPISpec) IsSynthetic() bool {
@@ -215,6 +223,17 @@ func RunDogfood(dir, specPath string, opts ...DogfoodOption) (*DogfoodReport, er
 			report.PathCheck = PathCheckResult{
 				Skipped: true,
 				Detail:  "synthetic spec: path validity not applicable",
+			}
+		} else if spec.IsInternalYAML {
+			// Internal YAML specs declare paths in their own shape. The
+			// OpenAPI-derived path-matching here produces "0/0 valid
+			// (FAIL)" against perfectly valid CLIs. The scorecard's
+			// parallel path-validity check already records the dimension
+			// as unscored for internal YAML; align dogfood with that
+			// rather than report a contradictory FAIL.
+			report.PathCheck = PathCheckResult{
+				Skipped: true,
+				Detail:  "internal-yaml spec: paths validated at parse time",
 			}
 		} else {
 			report.PathCheck = checkPaths(dir, spec.Paths)
