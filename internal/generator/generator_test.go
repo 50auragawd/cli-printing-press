@@ -2312,9 +2312,12 @@ func TestGeneratedDoctor_AuthVerifyPathProbesEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	content := string(doctorGo)
 
-	// Probe should target baseURL + verify_path, not bare baseURL
+	// Probe should target baseURL + verify_path via the configured client,
+	// not bare baseURL. The doctor uses flags.newClient() now (Surf-aware)
+	// instead of stdlib http.Client.
 	assert.Contains(t, content, `verifyPath := "/me?fields=id"`)
-	assert.Contains(t, content, `http.NewRequest("GET", baseURL+verifyPath, nil)`)
+	assert.Contains(t, content, `c.GetWithHeaders(verifyPath`)
+	assert.NotContains(t, content, `&http.Client{`)
 	// When verify_path is set, 401/403 keeps the strict "invalid" verdict
 	assert.Contains(t, content, `"invalid (HTTP %d) — check your credentials"`)
 	// And does NOT emit the inconclusive fallback wording
@@ -2359,9 +2362,12 @@ func TestGeneratedDoctor_NoVerifyPathSoftens401(t *testing.T) {
 	require.NoError(t, err)
 	content := string(doctorGo)
 
-	// Probe should hit the bare base URL (no verify_path appended)
-	assert.Contains(t, content, `http.NewRequest("GET", baseURL, nil)`)
-	assert.NotContains(t, content, "verifyPath := ")
+	// Without spec verify_path, the doctor probes "/" via the configured
+	// client. The client is the same Surf-aware *client.Client used by
+	// regular commands -- not a fresh stdlib http.Client.
+	assert.Contains(t, content, `verifyPath := "/"`)
+	assert.Contains(t, content, `c.GetWithHeaders(verifyPath`)
+	assert.NotContains(t, content, `&http.Client{`)
 	// 401/403 fallback must be the soft "inconclusive" verdict
 	assert.Contains(t, content, `"inconclusive (HTTP %d from base URL — set auth.verify_path in spec for a definitive probe)"`)
 	// And must NOT use the strict "invalid" wording
