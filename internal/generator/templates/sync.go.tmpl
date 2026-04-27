@@ -348,16 +348,35 @@ func syncResource(c interface {
 			break
 		}
 
-		// Batch upsert all items from this page
-		if err := db.UpsertBatch(resource, items); err != nil {
+		// Batch upsert all items from this page. UpsertBatch returns the
+		// count of rows actually stored — items whose primary-key field
+		// can't be extracted (e.g. APIs that return scalar IDs rather
+		// than objects) are silently skipped. Tracking stored separately
+		// from consumed lets us emit a clear sync_anomaly event when an
+		// API silently drops everything.
+		stored, err := db.UpsertBatch(resource, items)
+		if err != nil {
 			if !humanFriendly {
 				fmt.Fprintf(os.Stderr, `{"event":"sync_error","resource":"%s","error":"%s"}`+"\n", resource, strings.ReplaceAll(err.Error(), `"`, `\"`))
 			}
 			return syncResult{Resource: resource, Count: totalCount, Err: fmt.Errorf("upserting batch for %s: %w", resource, err), Duration: time.Since(started)}
 		}
 
-		totalCount += len(items)
-		atomic.AddInt64(&progressCount, int64(len(items)))
+		// When a non-empty page yielded zero stored rows, the API
+		// returned items in a shape we couldn't extract IDs from —
+		// likely scalar IDs (Firebase /topstories.json, GitHub user-
+		// repo lists) where the spec author should declare a hydration
+		// pattern, or an unrecognized primary-key field name.
+		if len(items) > 0 && stored == 0 {
+			if humanFriendly {
+				fmt.Fprintf(os.Stderr, "warning: %s returned %d items but stored 0 — the local store will be empty for this resource. Likely cause: scalar item shape rather than objects with extractable IDs.\n", resource, len(items))
+			} else {
+				fmt.Fprintf(os.Stderr, `{"event":"sync_anomaly","resource":"%s","consumed":%d,"stored":0,"reason":"all_items_failed_id_extraction"}`+"\n", resource, len(items))
+			}
+		}
+
+		totalCount += stored
+		atomic.AddInt64(&progressCount, int64(stored))
 
 		// Progress reporting (include rate limit info when active)
 		currentRate := c.RateLimit()
@@ -729,14 +748,15 @@ func syncDependentResource(c interface {
 				}
 			}
 
-			if err := db.UpsertBatch(dep.Name, items); err != nil {
+			stored, err := db.UpsertBatch(dep.Name, items)
+			if err != nil {
 				if humanFriendly {
 					fmt.Fprintf(os.Stderr, "\n  %s: upsert error for parent %s: %v\n", dep.Name, parentID, err)
 				}
 				break
 			}
 
-			totalCount += len(items)
+			totalCount += stored
 			pagesFetched++
 
 			if maxPages > 0 && pagesFetched >= maxPages {

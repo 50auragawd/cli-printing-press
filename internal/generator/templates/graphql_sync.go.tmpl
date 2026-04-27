@@ -316,15 +316,25 @@ func syncResource(c *client.Client, db *store.Store, resource, sinceTS string, f
 			break
 		}
 
-		// Batch upsert all items from this page
-		if err := db.UpsertBatch(resource, conn.Nodes); err != nil {
+		// Batch upsert all items from this page. Track stored separately
+		// from consumed so we can warn when ID extraction fails for the
+		// whole batch.
+		stored, err := db.UpsertBatch(resource, conn.Nodes)
+		if err != nil {
 			if !humanFriendly {
 				fmt.Fprintf(os.Stderr, `{"event":"sync_error","resource":"%s","error":"%s"}`+"\n", resource, strings.ReplaceAll(err.Error(), `"`, `\"`))
 			}
 			return syncResult{Resource: resource, Count: totalCount, Err: fmt.Errorf("upserting batch for %s: %w", resource, err), Duration: time.Since(started)}
 		}
+		if len(conn.Nodes) > 0 && stored == 0 {
+			if humanFriendly {
+				fmt.Fprintf(os.Stderr, "warning: %s returned %d items but stored 0 — the local store will be empty for this resource. Likely cause: scalar item shape rather than objects with extractable IDs.\n", resource, len(conn.Nodes))
+			} else {
+				fmt.Fprintf(os.Stderr, `{"event":"sync_anomaly","resource":"%s","consumed":%d,"stored":0,"reason":"all_items_failed_id_extraction"}`+"\n", resource, len(conn.Nodes))
+			}
+		}
 
-		totalCount += len(conn.Nodes)
+		totalCount += stored
 
 		// Progress reporting
 		if humanFriendly {

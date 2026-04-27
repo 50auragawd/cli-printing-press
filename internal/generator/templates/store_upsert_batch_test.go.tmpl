@@ -41,7 +41,7 @@ func TestUpsertBatch_Populates{{pascal .Name}}Table(t *testing.T) {
 		json.RawMessage(`{"id": "test-002"}`),
 		json.RawMessage(`{"id": "test-003"}`),
 	}
-	if err := s.UpsertBatch("{{.Name}}", items); err != nil {
+	if _, err := s.UpsertBatch("{{.Name}}", items); err != nil {
 		t.Fatalf("UpsertBatch: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestUpsertBatch_Sets{{pascal .Name}}ParentID(t *testing.T) {
 		json.RawMessage(`{"id": "child-002", "parent_id": "parent-A"}`),
 		json.RawMessage(`{"id": "child-003", "parent_id": "parent-B"}`),
 	}
-	if err := s.UpsertBatch("{{.Name}}", items); err != nil {
+	if _, err := s.UpsertBatch("{{.Name}}", items); err != nil {
 		t.Fatalf("UpsertBatch: %v", err)
 	}
 
