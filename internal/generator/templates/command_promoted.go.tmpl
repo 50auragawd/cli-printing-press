@@ -159,6 +159,8 @@ func new{{camel .PromotedName}}PromotedCmd(flags *rootFlags) *cobra.Command {
 {{- end}}
 					},
 					Limit: {{with .Endpoint.HTMLExtract}}{{.Limit}}{{else}}0{{end}},
+					ScriptSelector: {{with .Endpoint.HTMLExtract}}{{printf "%q" .EffectiveScriptSelector}}{{else}}""{{end}},
+					JSONPath: {{with .Endpoint.HTMLExtract}}{{printf "%q" .JSONPath}}{{else}}""{{end}},
 				})
 				if err != nil {
 					return err

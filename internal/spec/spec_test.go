@@ -1442,6 +1442,75 @@ func TestHTMLResponseExtractionValidation(t *testing.T) {
 	require.ErrorContains(t, badMethod.Validate(), "html response_format is only supported")
 }
 
+func TestHTMLExtract_EmbeddedJSONMode(t *testing.T) {
+	t.Parallel()
+
+	embeddedJSON := func() APISpec {
+		return APISpec{
+			Name:    "nextapp",
+			BaseURL: "https://www.example.com",
+			Resources: map[string]Resource{
+				"recipes": {
+					Description: "Recipes",
+					Endpoints: map[string]Endpoint{
+						"browse": {
+							Method:         "GET",
+							Path:           "/recipes/{tag}",
+							Description:    "Browse recipes by tag",
+							ResponseFormat: ResponseFormatHTML,
+							HTMLExtract: &HTMLExtract{
+								Mode:           HTMLExtractModeEmbeddedJSON,
+								ScriptSelector: "script#__NEXT_DATA__",
+								JSONPath:       "props.pageProps.recipesByTag.results",
+							},
+							Response: ResponseDef{Type: "array", Item: "recipe"},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	// Happy path: embedded-json with explicit selector + json_path validates.
+	base := embeddedJSON()
+	require.NoError(t, base.Validate())
+	ep := base.Resources["recipes"].Endpoints["browse"]
+	assert.Equal(t, HTMLExtractModeEmbeddedJSON, ep.HTMLExtract.EffectiveMode())
+	assert.Equal(t, "script#__NEXT_DATA__", ep.HTMLExtract.EffectiveScriptSelector())
+
+	// Default selector: empty ScriptSelector resolves to the Next.js
+	// pages-router default.
+	defaults := embeddedJSON()
+	depEP := defaults.Resources["recipes"].Endpoints["browse"]
+	depEP.HTMLExtract.ScriptSelector = ""
+	defaults.Resources["recipes"].Endpoints["browse"] = depEP
+	require.NoError(t, defaults.Validate())
+	assert.Equal(t, DefaultEmbeddedJSONScriptSelector, depEP.HTMLExtract.EffectiveScriptSelector())
+
+	// Empty json_path is valid (returns whole pageProps).
+	emptyPath := embeddedJSON()
+	pep := emptyPath.Resources["recipes"].Endpoints["browse"]
+	pep.HTMLExtract.JSONPath = ""
+	emptyPath.Resources["recipes"].Endpoints["browse"] = pep
+	require.NoError(t, emptyPath.Validate())
+
+	// Whitespace-only ScriptSelector is rejected (catch typos like " ").
+	badSelector := embeddedJSON()
+	bsEP := badSelector.Resources["recipes"].Endpoints["browse"]
+	bsEP.HTMLExtract.ScriptSelector = "   "
+	badSelector.Resources["recipes"].Endpoints["browse"] = bsEP
+	require.ErrorContains(t, badSelector.Validate(), "script_selector cannot be whitespace-only")
+
+	// Unknown mode is still rejected and the error message names embedded-json.
+	unknownMode := embeddedJSON()
+	uEP := unknownMode.Resources["recipes"].Endpoints["browse"]
+	uEP.HTMLExtract.Mode = "rsc-stream"
+	unknownMode.Resources["recipes"].Endpoints["browse"] = uEP
+	err := unknownMode.Validate()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "embedded-json")
+}
+
 func TestEnrichPathParams(t *testing.T) {
 	t.Parallel()
 

@@ -31,9 +31,21 @@ const (
 )
 
 const (
-	HTMLExtractModePage  = "page"
-	HTMLExtractModeLinks = "links"
+	HTMLExtractModePage         = "page"
+	HTMLExtractModeLinks        = "links"
+	HTMLExtractModeEmbeddedJSON = "embedded-json"
 )
+
+// DefaultEmbeddedJSONScriptSelector is the script-tag selector used when
+// `html_extract.mode: embedded-json` is set without an explicit
+// `script_selector`. Targets Next.js's pages-router `<script id="__NEXT_DATA__">`
+// block — the most common shape and the one the food52 retro surfaced.
+// Other SSR frameworks declare different selectors:
+//   - Nuxt:        script#__NUXT__
+//   - Remix:       script:contains("window.__remixContext") (use selector
+//     with type or id when available)
+//   - Astro:       site-specific; declare per spec
+const DefaultEmbeddedJSONScriptSelector = "script#__NEXT_DATA__"
 
 type APISpec struct {
 	Name string `yaml:"name" json:"name"`
@@ -382,9 +394,23 @@ func (e Endpoint) UsesHTMLResponse() bool {
 }
 
 type HTMLExtract struct {
-	Mode         string   `yaml:"mode,omitempty" json:"mode,omitempty"`                   // page (default) or links
-	LinkPrefixes []string `yaml:"link_prefixes,omitempty" json:"link_prefixes,omitempty"` // URL path prefixes to keep when extracting links
-	Limit        int      `yaml:"limit,omitempty" json:"limit,omitempty"`                 // max links to return; defaults at runtime
+	Mode         string   `yaml:"mode,omitempty" json:"mode,omitempty"`                   // page (default), links, or embedded-json
+	LinkPrefixes []string `yaml:"link_prefixes,omitempty" json:"link_prefixes,omitempty"` // URL path prefixes to keep when extracting links (mode: links)
+	Limit        int      `yaml:"limit,omitempty" json:"limit,omitempty"`                 // max links to return; defaults at runtime (mode: links)
+	// ScriptSelector identifies the <script> tag containing serialized
+	// page state when mode is embedded-json. Defaults to
+	// DefaultEmbeddedJSONScriptSelector ("script#__NEXT_DATA__") when
+	// empty — the most common Next.js pages-router shape. Other SSR
+	// frameworks declare per-site selectors (Nuxt: "script#__NUXT__",
+	// etc.). Selector grammar is the simple "tag" / "tag#id" form
+	// supported by the runtime extractor; expand later if needed.
+	ScriptSelector string `yaml:"script_selector,omitempty" json:"script_selector,omitempty"`
+	// JSONPath is a dot-notation walk into the parsed JSON inside the
+	// matched script tag (mode: embedded-json). For Next.js the typical
+	// value is "props.pageProps.<route-data>"; for Nuxt "data.<route>".
+	// Empty path returns the entire parsed JSON. Missing intermediate
+	// keys yield a typed-empty result rather than an error.
+	JSONPath string `yaml:"json_path,omitempty" json:"json_path,omitempty"`
 }
 
 func (h *HTMLExtract) EffectiveMode() string {
@@ -392,6 +418,16 @@ func (h *HTMLExtract) EffectiveMode() string {
 		return HTMLExtractModePage
 	}
 	return h.Mode
+}
+
+// EffectiveScriptSelector returns the configured script selector, or the
+// default Next.js pages-router selector when unset. Only meaningful when
+// EffectiveMode() == HTMLExtractModeEmbeddedJSON.
+func (h *HTMLExtract) EffectiveScriptSelector() string {
+	if h == nil || strings.TrimSpace(h.ScriptSelector) == "" {
+		return DefaultEmbeddedJSONScriptSelector
+	}
+	return h.ScriptSelector
 }
 
 type Param struct {
@@ -832,12 +868,23 @@ func validateEndpointResponseFormat(e Endpoint) error {
 		return nil
 	}
 	switch e.HTMLExtract.Mode {
-	case "", HTMLExtractModePage, HTMLExtractModeLinks:
+	case "", HTMLExtractModePage, HTMLExtractModeLinks, HTMLExtractModeEmbeddedJSON:
 	default:
-		return fmt.Errorf("html_extract.mode must be one of: page, links")
+		return fmt.Errorf("html_extract.mode must be one of: page, links, embedded-json")
 	}
 	if e.HTMLExtract.Limit < 0 {
 		return fmt.Errorf("html_extract.limit must be >= 0")
+	}
+	// embedded-json-specific validation: script_selector defaults to
+	// Next.js's __NEXT_DATA__ when empty, so it's not strictly required;
+	// json_path is also optional (empty path returns the entire parsed
+	// JSON). Both have defaults so embedded-json validates with no extra
+	// fields set. Reject explicit empty json_path strings that contain
+	// only whitespace as a sanity check; trim happens at use time.
+	if e.HTMLExtract.Mode == HTMLExtractModeEmbeddedJSON {
+		if strings.TrimSpace(e.HTMLExtract.ScriptSelector) == "" && e.HTMLExtract.ScriptSelector != "" {
+			return fmt.Errorf("html_extract.script_selector cannot be whitespace-only")
+		}
 	}
 	return nil
 }

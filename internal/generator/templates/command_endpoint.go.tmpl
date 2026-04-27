@@ -359,6 +359,8 @@ func new{{camel .FuncPrefix}}{{camel .EndpointName}}Cmd(flags *rootFlags) *cobra
 {{- end}}
 					},
 					Limit: {{with .Endpoint.HTMLExtract}}{{.Limit}}{{else}}0{{end}},
+					ScriptSelector: {{with .Endpoint.HTMLExtract}}{{printf "%q" .EffectiveScriptSelector}}{{else}}""{{end}},
+					JSONPath: {{with .Endpoint.HTMLExtract}}{{printf "%q" .JSONPath}}{{else}}""{{end}},
 				})
 				if err != nil {
 					return err
