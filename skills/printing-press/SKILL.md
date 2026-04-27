@@ -1611,11 +1611,11 @@ Priority 3 (polish):
 
 ### Agent Build Checklist (per command)
 
-After building each command in Priority 1 and Priority 2, verify these 8 principles are met. These map 1:1 to what Phase 4.9's agent readiness reviewer will check - apply them now so the review becomes a confirmation, not a catch-all.
+After building each command in Priority 1 and Priority 2, verify these 9 principles are met. These map 1:1 to what Phase 4.9's agent readiness reviewer will check - apply them now so the review becomes a confirmation, not a catch-all.
 
 1. **Non-interactive**: No TTY prompts, no `bufio.Scanner(os.Stdin)`, works in CI without a terminal
 2. **Structured output**: `--json` produces valid JSON, `--select` filters fields correctly
-3. **Progressive help**: `--help` shows realistic examples with domain-specific values (not "abc123")
+3. **Progressive help**: `--help` shows realistic examples with domain-specific values (not "abc123"). **Use `Example: strings.Trim(\`...\`, "\n")` (preserves leading 2-space indent) NOT `strings.TrimSpace(\`...\`)` (strips it).** TrimSpace makes the first example line unindented; dogfood's example-detection parser is tolerant of this in current versions, but the indented form renders correctly across every Cobra version and is the convention used by every generated command.
 4. **Actionable errors**: Error messages name the specific flag/arg that's wrong and the correct usage
 5. **Safe retries**: Mutation commands support `--dry-run`, idempotent where possible
 6. **Composability**: Exit codes are typed (0/2/3/4/5/7/10 as applicable), output pipes to `jq` cleanly

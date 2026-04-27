@@ -279,6 +279,31 @@ func TestExtractExamplesSection(t *testing.T) {
 			help: "",
 			want: "",
 		},
+		{
+			// Regression: examples whose first line is unindented (the result
+			// of the strings.TrimSpace(`...`) idiom, which strips the leading
+			// 2-space indent). Prior parser broke at the first unindented
+			// line and captured nothing. New parser only breaks on canonical
+			// Cobra section headers.
+			name: "first example unindented (TrimSpace idiom)",
+			help: "Examples:\nfood52-pp-cli articles browse food\n  food52-pp-cli articles browse life --limit 10 --json\n\nFlags:\n  --limit int\n",
+			want: "food52-pp-cli articles browse food\n  food52-pp-cli articles browse life --limit 10 --json",
+		},
+		{
+			// Trailing "Use \"...\" for more information..." line is a
+			// section boundary too — match on the literal `Use "` prefix.
+			name: "use-for-more trailing line",
+			help: "Examples:\n  cli do --a 1\n\nUse \"cli [command] --help\" for more information about a command.\n",
+			want: "cli do --a 1",
+		},
+		{
+			// Lines that start with a word like "use" but are NOT the
+			// Cobra trailing line (lowercase, no quote) are example
+			// continuation, not section boundaries.
+			name: "example line starting with word use",
+			help: "Examples:\n  cli widget create  # use the default options\n  cli widget update\n\nFlags:\n  --opts string\n",
+			want: "cli widget create  # use the default options\n  cli widget update",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
