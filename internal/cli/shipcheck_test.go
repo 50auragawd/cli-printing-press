@@ -46,6 +46,28 @@ func withStubBinary(t *testing.T, path string) func() {
 	return func() { resolveSelfBinary = prev }
 }
 
+func useShipcheckStub(t *testing.T) {
+	t.Helper()
+	stub := buildShipcheckStub(t)
+	t.Cleanup(withStubBinary(t, stub))
+}
+
+type shipcheckHarness struct {
+	dir     string
+	logFile string
+}
+
+func newShipcheckHarness(t *testing.T) shipcheckHarness {
+	t.Helper()
+	useShipcheckStub(t)
+	logFile := filepath.Join(t.TempDir(), "stub.log")
+	t.Setenv("STUB_LOG_FILE", logFile)
+	return shipcheckHarness{
+		dir:     fakeCLIDir(t),
+		logFile: logFile,
+	}
+}
+
 // readStubLog parses the stub's per-invocation argv log. Each line is
 // tab-separated argv as the stub recorded it.
 func readStubLog(t *testing.T, logPath string) [][]string {
@@ -84,18 +106,13 @@ func runShipcheckCmd(t *testing.T, args ...string) error {
 // TestShipcheck_AllLegsPass: every leg exits 0, umbrella returns nil.
 // All five legs must be invoked in canonical order with correct argv.
 func TestShipcheck_AllLegsPass(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	h := newShipcheckHarness(t)
 
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
-
-	if err := runShipcheckCmd(t, "--dir", dir); err != nil {
+	if err := runShipcheckCmd(t, "--dir", h.dir); err != nil {
 		t.Fatalf("expected nil error when all legs pass; got %v", err)
 	}
 
-	invocations := readStubLog(t, logFile)
+	invocations := readStubLog(t, h.logFile)
 	if len(invocations) != len(shipcheckLegs) {
 		t.Fatalf("expected %d leg invocations; got %d: %v", len(shipcheckLegs), len(invocations), invocations)
 	}
@@ -116,15 +133,10 @@ func TestShipcheck_AllLegsPass(t *testing.T) {
 // TestShipcheck_OneLegFails: verify-skill exits 1, umbrella returns
 // ExitError with code 1; all five legs still ran (no fail-fast).
 func TestShipcheck_OneLegFails(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
-
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
+	h := newShipcheckHarness(t)
 	t.Setenv("STUB_EXIT_VERIFY_SKILL", "1")
 
-	err := runShipcheckCmd(t, "--dir", dir)
+	err := runShipcheckCmd(t, "--dir", h.dir)
 	if err == nil {
 		t.Fatal("expected non-nil error when verify-skill fails; got nil")
 	}
@@ -139,7 +151,7 @@ func TestShipcheck_OneLegFails(t *testing.T) {
 		t.Error("expected Silent=true so cobra does not duplicate the error message; got Silent=false")
 	}
 
-	invocations := readStubLog(t, logFile)
+	invocations := readStubLog(t, h.logFile)
 	if len(invocations) != len(shipcheckLegs) {
 		t.Errorf("expected %d invocations even when one fails (no fail-fast); got %d", len(shipcheckLegs), len(invocations))
 	}
@@ -148,16 +160,11 @@ func TestShipcheck_OneLegFails(t *testing.T) {
 // TestShipcheck_MultipleFailures: dogfood exits 2, scorecard exits 1.
 // Umbrella exits with the largest non-zero code (2).
 func TestShipcheck_MultipleFailures(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
-
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
+	h := newShipcheckHarness(t)
 	t.Setenv("STUB_EXIT_DOGFOOD", "2")
 	t.Setenv("STUB_EXIT_SCORECARD", "1")
 
-	err := runShipcheckCmd(t, "--dir", dir)
+	err := runShipcheckCmd(t, "--dir", h.dir)
 	if err == nil {
 		t.Fatal("expected non-nil error when multiple legs fail")
 	}
@@ -174,18 +181,13 @@ func TestShipcheck_MultipleFailures(t *testing.T) {
 // any opt-out flags, verify gets --fix and scorecard gets --live-check.
 // These are the recommended Phase 4 invocations.
 func TestShipcheck_DefaultArgvIncludesFixAndLiveCheck(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	h := newShipcheckHarness(t)
 
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
-
-	if err := runShipcheckCmd(t, "--dir", dir); err != nil {
+	if err := runShipcheckCmd(t, "--dir", h.dir); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	invocations := readStubLog(t, logFile)
+	invocations := readStubLog(t, h.logFile)
 	verifyArgs := findInvocation(invocations, "verify")
 	if !argvHas(verifyArgs, "--fix") {
 		t.Errorf("expected verify argv to include --fix by default; got %v", verifyArgs)
@@ -199,20 +201,15 @@ func TestShipcheck_DefaultArgvIncludesFixAndLiveCheck(t *testing.T) {
 // TestShipcheck_PassesSpecAndResearchDir: when --spec and --research-dir
 // are set, dogfood and scorecard receive both; verify receives --spec.
 func TestShipcheck_PassesSpecAndResearchDir(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
-
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
+	h := newShipcheckHarness(t)
 
 	specPath := "/some/spec.yaml"
 	researchDir := "/some/research"
-	if err := runShipcheckCmd(t, "--dir", dir, "--spec", specPath, "--research-dir", researchDir); err != nil {
+	if err := runShipcheckCmd(t, "--dir", h.dir, "--spec", specPath, "--research-dir", researchDir); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	invocations := readStubLog(t, logFile)
+	invocations := readStubLog(t, h.logFile)
 
 	dogfoodArgs := findInvocation(invocations, "dogfood")
 	if !argvHas(dogfoodArgs, "--spec") || !argvHas(dogfoodArgs, specPath) {
@@ -250,8 +247,7 @@ func TestShipcheck_PassesSpecAndResearchDir(t *testing.T) {
 // TestShipcheck_RequiresDir: missing --dir returns ExitInputError before
 // any leg runs.
 func TestShipcheck_RequiresDir(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	useShipcheckStub(t)
 	logFile := filepath.Join(t.TempDir(), "stub.log")
 	t.Setenv("STUB_LOG_FILE", logFile)
 
@@ -279,8 +275,7 @@ func TestShipcheck_RequiresDir(t *testing.T) {
 // TestShipcheck_RejectsNonexistentDir: --dir pointing at a missing path
 // returns ExitInputError.
 func TestShipcheck_RejectsNonexistentDir(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	useShipcheckStub(t)
 
 	err := runShipcheckCmd(t, "--dir", "/this/path/does/not/exist/anywhere")
 	if err == nil {
@@ -299,8 +294,7 @@ func TestShipcheck_RejectsNonexistentDir(t *testing.T) {
 // without go.mod returns ExitInputError. Guards against accidentally
 // running shipcheck against a manuscripts dir or unrelated path.
 func TestShipcheck_RejectsDirWithoutGoMod(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	useShipcheckStub(t)
 
 	dir := t.TempDir() // empty — no go.mod
 	err := runShipcheckCmd(t, "--dir", dir)
@@ -320,18 +314,13 @@ func TestShipcheck_RejectsDirWithoutGoMod(t *testing.T) {
 // --fix from verify's argv. Used when an operator wants a read-only
 // shipcheck pass without verify mutating source files.
 func TestShipcheck_NoFix_OmitsFixFromVerify(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	h := newShipcheckHarness(t)
 
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
-
-	if err := runShipcheckCmd(t, "--dir", dir, "--no-fix"); err != nil {
+	if err := runShipcheckCmd(t, "--dir", h.dir, "--no-fix"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	verifyArgs := findInvocation(readStubLog(t, logFile), "verify")
+	verifyArgs := findInvocation(readStubLog(t, h.logFile), "verify")
 	if argvHas(verifyArgs, "--fix") {
 		t.Errorf("--no-fix should omit --fix from verify argv; got %v", verifyArgs)
 	}
@@ -341,18 +330,13 @@ func TestShipcheck_NoFix_OmitsFixFromVerify(t *testing.T) {
 // --no-live-check removes --live-check from scorecard's argv. Used when
 // an operator wants a quick scorecard read without sampling live calls.
 func TestShipcheck_NoLiveCheck_OmitsLiveCheckFromScorecard(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	h := newShipcheckHarness(t)
 
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
-
-	if err := runShipcheckCmd(t, "--dir", dir, "--no-live-check"); err != nil {
+	if err := runShipcheckCmd(t, "--dir", h.dir, "--no-live-check"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	scorecardArgs := findInvocation(readStubLog(t, logFile), "scorecard")
+	scorecardArgs := findInvocation(readStubLog(t, h.logFile), "scorecard")
 	if argvHas(scorecardArgs, "--live-check") {
 		t.Errorf("--no-live-check should omit --live-check from scorecard argv; got %v", scorecardArgs)
 	}
@@ -361,22 +345,17 @@ func TestShipcheck_NoLiveCheck_OmitsLiveCheckFromScorecard(t *testing.T) {
 // TestShipcheck_PassesAuthFlagsToVerify confirms --api-key and --env-var
 // flow through to verify (and only verify — other legs do not accept them).
 func TestShipcheck_PassesAuthFlagsToVerify(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
-
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
+	h := newShipcheckHarness(t)
 
 	if err := runShipcheckCmd(t,
-		"--dir", dir,
+		"--dir", h.dir,
 		"--api-key", "ghp_test123",
 		"--env-var", "GITHUB_TOKEN",
 	); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	invocations := readStubLog(t, logFile)
+	invocations := readStubLog(t, h.logFile)
 	verifyArgs := findInvocation(invocations, "verify")
 	if !argvHas(verifyArgs, "--api-key") || !argvHas(verifyArgs, "ghp_test123") {
 		t.Errorf("verify argv missing --api-key: %v", verifyArgs)
@@ -400,18 +379,13 @@ func TestShipcheck_PassesAuthFlagsToVerify(t *testing.T) {
 // TestShipcheck_StrictPassesToVerifySkill confirms --strict propagates
 // to verify-skill (and only verify-skill — other legs don't accept it).
 func TestShipcheck_StrictPassesToVerifySkill(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
+	h := newShipcheckHarness(t)
 
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
-
-	if err := runShipcheckCmd(t, "--dir", dir, "--strict"); err != nil {
+	if err := runShipcheckCmd(t, "--dir", h.dir, "--strict"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	invocations := readStubLog(t, logFile)
+	invocations := readStubLog(t, h.logFile)
 	vsArgs := findInvocation(invocations, "verify-skill")
 	if !argvHas(vsArgs, "--strict") {
 		t.Errorf("verify-skill argv missing --strict: %v", vsArgs)
@@ -427,15 +401,10 @@ func TestShipcheck_StrictPassesToVerifySkill(t *testing.T) {
 // TestShipcheck_JSONEnvelope_AllPass: --json produces parseable JSON
 // with the expected shape when every leg passes.
 func TestShipcheck_JSONEnvelope_AllPass(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
-
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
+	h := newShipcheckHarness(t)
 
 	out := captureStdout(t, func() {
-		if err := runShipcheckCmd(t, "--dir", dir, "--json"); err != nil {
+		if err := runShipcheckCmd(t, "--dir", h.dir, "--json"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -477,16 +446,11 @@ func TestShipcheck_JSONEnvelope_AllPass(t *testing.T) {
 // TestShipcheck_JSONEnvelope_OneFailure: --json envelope reflects a
 // failing leg with passed=false at the leg and envelope level.
 func TestShipcheck_JSONEnvelope_OneFailure(t *testing.T) {
-	stub := buildShipcheckStub(t)
-	defer withStubBinary(t, stub)()
-
-	dir := fakeCLIDir(t)
-	logFile := filepath.Join(t.TempDir(), "stub.log")
-	t.Setenv("STUB_LOG_FILE", logFile)
+	h := newShipcheckHarness(t)
 	t.Setenv("STUB_EXIT_VERIFY_SKILL", "1")
 
 	out := captureStdout(t, func() {
-		err := runShipcheckCmd(t, "--dir", dir, "--json")
+		err := runShipcheckCmd(t, "--dir", h.dir, "--json")
 		if err == nil {
 			t.Fatal("expected non-nil error when verify-skill fails")
 		}
