@@ -111,6 +111,170 @@ workspace naturally produces.
 manuscripts and test results. Any live test data quoted in the PR body must be
 scrubbed of workspace PII. The library repo is public.
 
+## PII pattern scanning
+
+The prose guidance above tells the agent how to compose published artifacts safely.
+This section defines a mechanical sweep that runs before publishing to catch the
+PII the agent missed. Two prior PII leaks happened despite the prose guidance — a
+mechanical defense layer is required.
+
+**Run order:** exact-value scan (above) → HAR auth strip → PII pattern scanning.
+
+**File scope.** Sweep all text-readable files in the staging directory. Detect by
+content, not extension — a `.yaml` HAR variant or a `.txt` proof matters as much as
+a `.md`. Use this Go-equivalent helper to classify:
+
+```bash
+# Treat as text if no NULL byte in the first 8 KiB
+isText() { head -c 8192 "$1" | grep -L -q $'\x00' "$1" 2>/dev/null; }
+```
+
+(In Bash, `file --mime-type` works on macOS and GNU `file` portably enough.)
+
+### Tier 1: vendor-anchored auto-redact
+
+Auto-redact ONLY when the pattern includes a vendor-specific prefix anchor. These
+have near-zero false-positive rate. Auto-redact silently — no user prompt, no
+recovery prompt. Pattern set:
+
+```bash
+PII_AUTO_REDACT=(
+  'bearer-stripe-live|Bearer sk_live_[A-Za-z0-9]{20,}|Bearer <REDACTED:stripe-live-token>'
+  'bearer-stripe-test|Bearer sk_test_[A-Za-z0-9]{20,}|Bearer <REDACTED:stripe-test-token>'
+  'bearer-cal-live|Bearer cal_live_[A-Za-z0-9]{20,}|Bearer <REDACTED:cal-live-token>'
+  'bearer-cal-test|Bearer cal_test_[A-Za-z0-9]{20,}|Bearer <REDACTED:cal-test-token>'
+  'bearer-github-pat|Bearer ghp_[A-Za-z0-9]{36,}|Bearer <REDACTED:github-pat>'
+  'bearer-github-oauth|Bearer gho_[A-Za-z0-9]{36,}|Bearer <REDACTED:github-oauth>'
+  'bearer-github-fine|Bearer github_pat_[A-Za-z0-9_]{60,}|Bearer <REDACTED:github-fine-grained-pat>'
+  'slack-user-token|xoxp-[A-Za-z0-9-]{40,}|<REDACTED:slack-user-token>'
+  'slack-bot-token|xoxb-[A-Za-z0-9-]{40,}|<REDACTED:slack-bot-token>'
+)
+
+for entry in "${PII_AUTO_REDACT[@]}"; do
+  IFS='|' read -r name regex tag <<< "$entry"
+  for f in $(find "$STAGING_DIR" -type f); do
+    isText "$f" || continue
+    if grep -qE "$regex" "$f" 2>/dev/null; then
+      perl -i -pe "s|$regex|$tag|g" "$f"
+      echo "Auto-redacted $name in ${f#$STAGING_DIR/}"
+    fi
+  done
+done
+```
+
+These patterns are vendor-anchored and the prefix character class is restrictive
+enough that the false-positive rate is effectively zero. Adding a new vendor
+pattern is safe — extend the list when shipping a new printed CLI for a vendor
+with a known token format.
+
+### Tier 2: warn-by-default with allowlist
+
+Everything else gets WARN behavior. The user sees the matches, decides whether to
+redact each one. This includes generic emails, generic bearer tokens (without a
+vendor prefix), and capitalized name patterns. Designed cost asymmetry:
+false-positive auto-redaction loses information irreversibly; false-positive
+warning costs only a prompt.
+
+```bash
+PII_WARN=(
+  'email|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|email address'
+  'bearer-generic|Bearer [A-Za-z0-9._\-+/=]{20,}|generic bearer token (no vendor prefix)'
+  'name-pattern|\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b|capitalized first+last name'
+)
+```
+
+**Allowlist (suppress matches against this set):**
+
+Build at scan time from three sources:
+
+1. **Spec-derived terms.** Capitalized two-word phrases extracted from the spec's
+   operation summaries, descriptions, tag names, and parameter descriptions. This
+   catches "Event Types", "Booking Links", "Webhook Triggers" automatically — they
+   look like name patterns but are API vocabulary.
+
+2. **CLI-help-derived terms.** Walk `<cli> --help` recursively and extract
+   capitalized two-word phrases from command Short/Long fields. Catches command
+   group names that the spec might not mention by exact phrasing.
+
+3. **Universal allowlist.** A small static list of terms that appear across
+   APIs and would otherwise produce noise:
+
+   ```
+   "Open Source", "Pull Request", "Bearer Token", "API Key", "Access Token",
+   "Refresh Token", "GitHub Actions", "Cloud Run", "Service Account",
+   "Rate Limit", "Time Zone", "Web Hook", "Personal Access", "Application Token"
+   ```
+
+A match is suppressed if it matches any allowlist entry by:
+- Exact case-insensitive equality, OR
+- Case-insensitive `contains` against the allowlist entry
+
+Email pattern allowlist: any address whose domain matches `example.com`,
+`example.org`, `example.net`, `placeholder.com`, or starts with `noreply@`.
+
+### Tier 2 user interaction
+
+When Tier 2 finds matches, present them in a single batched prompt (NOT one
+per finding — that creates rubber-stamp fatigue). Per-finding format:
+
+```
+PII review (3 findings):
+
+  proofs/acceptance.md:42  email     trevin@trevinchow.com
+  proofs/acceptance.md:48  email     henryopenclaw@gmail.com
+  proofs/dogfood.md:108   name      Henry Claw
+
+Action:
+  [a] Auto-redact all
+  [s] Skip all (proceed without redacting)
+  [q] Quit and review staging dir at /tmp/.../staging.pre-pii-scrub
+```
+
+Pre-scrub copy: before any Tier 1 or Tier 2 mutation runs, copy the staging
+directory to `<staging>.pre-pii-scrub/`. This gives the user a recoverable
+checkpoint if a redaction was wrong.
+
+### Why warn-by-default
+
+The first design draft auto-redacted emails (permissive pattern) and warned on
+names (constrained pattern). Two reviewers independently called this cost-
+asymmetry inverted: false-positive auto-redaction permanently corrupts a
+manuscript artifact, while false-positive warning costs only a prompt. The
+correct policy is the inverse — warn on patterns where any false positive would
+lose information; auto-redact only on vendor-prefix-anchored patterns where the
+false-positive rate is structurally near-zero.
+
+### Worked examples
+
+**Example 1: vendor token in a proof file.** Input proof file contains:
+```
+Authorization: Bearer cal_live_7d8911769f5c3d63811e36d95d873a16
+```
+Tier 1 matches `bearer-cal-live`. Auto-redacts to:
+```
+Authorization: Bearer <REDACTED:cal-live-token>
+```
+No user prompt.
+
+**Example 2: real attendee in a dogfood report.** Input proof file contains:
+```
+Returned 1 real booking (Henry Claw 15-min meeting, attendee henryopenclaw@gmail.com).
+```
+Tier 2 matches `email` and `name-pattern`. The email's domain (`gmail.com`) is
+not in the allowlist; "Henry Claw" is not in spec-derived terms. Both surface in
+the batched prompt. User picks `[a]` Auto-redact all → both redacted.
+
+**Example 3: API vocabulary that looks like a name.** Input README contains:
+```
+The `Event Types` resource lists every bookable meeting type.
+```
+Tier 2 `name-pattern` matches "Event Types". Spec-derived allowlist includes
+"Event Types" (extracted from `tag: "Event Types"` in the spec). Match is
+suppressed. No prompt.
+
+**Example 4: clean staged dir.** No matches in either tier. No prompt, publish
+proceeds.
+
 ## Session state cleanup
 
 Session state files (`session-state.json`) contain browser cookies and auth tokens.

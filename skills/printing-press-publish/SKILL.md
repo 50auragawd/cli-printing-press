@@ -825,6 +825,29 @@ If any issues are found, warn the user and ask whether to proceed. The user
 makes the final call — they may have intentionally included something the scan
 flagged (e.g., a test fixture with a fake key). Don't block silently.
 
+### PII pattern scanning (mandatory)
+
+Beyond the secret scans above, run the **PII pattern scanning** step from
+[../printing-press/references/secret-protection.md](../printing-press/references/secret-protection.md#pii-pattern-scanning)
+(section "PII pattern scanning"). This catches PII captured during live dogfood
+that the prose guidance missed — emails, real attendee names, account
+identifiers — before they ship to the public library repo.
+
+The scan has two tiers:
+- **Tier 1 (auto-redact silently):** vendor-prefix-anchored bearer tokens
+  (`Bearer cal_live_*`, `Bearer sk_live_*`, `Bearer ghp_*`, `xoxp-*`, etc.).
+  Near-zero false-positive rate.
+- **Tier 2 (warn, batched user prompt):** generic emails, generic bearer tokens,
+  capitalized first+last name patterns. Allowlist suppresses spec-derived API
+  vocabulary ("Event Types", "Booking Links") automatically.
+
+A pre-scrub copy of the staging directory is preserved at
+`<staging>.pre-pii-scrub/` so the user can recover from a wrong redaction.
+
+Two prior PII leaks shipped to the public library before this scan existed.
+The scan is the mechanical defense layer the prose guidance alone could not
+provide.
+
 ## Error Handling
 
 - **`gh` not authenticated:** Detect in Step 1, tell user to run `gh auth login`
