@@ -63,6 +63,7 @@ func Execute() error {
 	rootCmd.AddCommand(newMCPAuditCmd())
 	rootCmd.AddCommand(newProbeReachabilityCmd())
 	rootCmd.AddCommand(newSchemaCmd())
+	rootCmd.AddCommand(newBundleCmd())
 
 	return rootCmd.Execute()
 }
@@ -161,6 +162,7 @@ func newGenerateCmd() *cobra.Command {
 				}); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not write manifest: %v\n", err)
 				}
+				autoBundleForHost(absOut, os.Stderr)
 
 				fmt.Fprintf(os.Stderr, "Generated %s at %s (from docs)\n", parsed.Name, absOut)
 				if asJSON {
@@ -320,6 +322,7 @@ func newGenerateCmd() *cobra.Command {
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not write manifest: %v\n", err)
 			}
+			autoBundleForHost(absOut, os.Stderr)
 
 			// Archive the input spec alongside the CLI for reproducibility.
 			// The spec_url may change or disappear; this local copy is the
