@@ -116,8 +116,7 @@ func TestGenerateProjectsCompile(t *testing.T) {
 func TestGenerateCliutilPackage(t *testing.T) {
 	t.Parallel()
 
-	apiSpec, err := spec.Parse(filepath.Join("..", "..", "testdata", "stytch.yaml"))
-	require.NoError(t, err)
+	apiSpec := minimalSpec("cliutil")
 
 	outputDir := filepath.Join(t.TempDir(), naming.CLI(apiSpec.Name))
 	gen := New(apiSpec, outputDir)
@@ -162,14 +161,12 @@ func TestGenerateCliutilPackage(t *testing.T) {
 func TestGenerateFreshnessHelperEmitted(t *testing.T) {
 	t.Parallel()
 
-	// Start from stytch (has resources -> has store) and flip cache on.
-	apiSpec, err := spec.Parse(filepath.Join("..", "..", "testdata", "stytch.yaml"))
-	require.NoError(t, err)
+	apiSpec := minimalSpec("freshness")
 	apiSpec.Cache = spec.CacheConfig{
 		Enabled:    true,
 		StaleAfter: "6h",
 		Commands: []spec.CacheCommand{
-			{Name: "dashboard", Resources: []string{"users"}},
+			{Name: "dashboard", Resources: []string{"items"}},
 		},
 	}
 
@@ -195,9 +192,9 @@ func TestGenerateFreshnessHelperEmitted(t *testing.T) {
 		"func ensureFreshForResources(",
 		"func ensureFreshForCommand(",
 		"func runAutoRefresh(",
-		`"stytch-pp-cli dashboard": {`,
-		`"users",`,
-		`envOptOut := "STYTCH_NO_AUTO_REFRESH"`,
+		`"freshness-pp-cli dashboard": {`,
+		`"items",`,
+		`envOptOut := "FRESHNESS_NO_AUTO_REFRESH"`,
 	} {
 		assert.Contains(t, src, snippet, "auto_refresh.go missing %q", snippet)
 	}
@@ -222,18 +219,17 @@ func TestGenerateFreshnessHelperEmitted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(readme), "## Freshness")
 	assert.Contains(t, string(readme), "meta.freshness")
-	assert.Contains(t, string(readme), "`stytch-pp-cli dashboard`")
+	assert.Contains(t, string(readme), "`freshness-pp-cli dashboard`")
 
 	skill, err := os.ReadFile(filepath.Join(outputDir, "SKILL.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(skill), "## Freshness Contract")
 	assert.Contains(t, string(skill), "Covered paths:")
 
-	// Generated helper must compile and its tests must pass end-to-end,
-	// exercising the sync_state contract against a real SQLite DB.
+	// Generated helper and hook packages must compile, and cliutil tests
+	// exercise the sync_state contract against a real SQLite DB.
 	runGoCommand(t, outputDir, "mod", "tidy")
-	runGoCommand(t, outputDir, "build", "./...")
-	runGoCommand(t, outputDir, "test", "./internal/cliutil/...")
+	runGoCommand(t, outputDir, "test", "./internal/cli/...", "./internal/cliutil/...")
 }
 
 func TestGenerateFreshnessOptOutUsesASCIIPrefix(t *testing.T) {
