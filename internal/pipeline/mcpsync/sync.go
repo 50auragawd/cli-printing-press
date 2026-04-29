@@ -348,17 +348,12 @@ func newRootCmd(flags *rootFlags) *cobra.Command {
 }
 
 // readExistingManifestDisplayName returns the display_name from an
-// existing manifest.json on disk if it's a real brand name. The only
-// form rejected is the bare lowercase slug ("espn") that mcp-sync would
-// otherwise re-emit as the last-resort fallback; anything else is
-// preserved. The previous version also rejected title-cased slugs
-// (treating "Wikipedia" matching titleCaseFromSlug("wikipedia") as a
-// derived default), but that misfires on every single-word brand whose
-// correct casing is Title Case (Wikipedia, Stripe, Discord, Pinterest…)
-// and silently regressed the manifest's display_name back to the
-// lowercase slug.
+// existing manifest.json if it's a real brand name. The only form
+// rejected is the bare lowercase slug we'd otherwise emit as last
+// resort; everything else (ESPN, Wikipedia, Cal.com, Company GOAT,
+// PokéAPI) is preserved.
 func readExistingManifestDisplayName(cliDir string) string {
-	manifestData, err := os.ReadFile(filepath.Join(cliDir, "manifest.json"))
+	manifestData, err := os.ReadFile(filepath.Join(cliDir, pipeline.MCPBManifestFilename))
 	if err != nil {
 		return ""
 	}

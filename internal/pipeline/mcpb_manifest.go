@@ -161,20 +161,15 @@ func WriteMCPBManifestFromStruct(dir string, m CLIManifest) error {
 }
 
 func buildMCPBManifest(dir string, m CLIManifest) MCPBManifest {
-	// display_name resolution: canonical source first (.printing-press.json
-	// populated by spec.display_name on modern prints), then existing
-	// manifest.json for older library CLIs whose codemod-baked display_name
-	// carries the right brand casing, then derived from the API slug.
-	// Without the existing-manifest fallback, mcp-sync regressed library
-	// CLIs from "ESPN" → "espn".
-	//
-	// Description resolution (in manifestDescription) is *deliberately
-	// reversed* — existing manifest first. Hand-curated descriptions are
-	// the dominant ground truth for mature library CLIs and must survive
-	// regen even when .printing-press.json carries a different value.
+	// display_name and description use opposite preservation rules:
+	// canonical wins for display_name (so spec updates flow through),
+	// existing wins for description (so hand-edits survive regen). Both
+	// consult the existing manifest.json — load once, share the snapshot.
+	existing := loadExistingMCPBManifest(dir)
+
 	displayName := m.DisplayName
-	if displayName == "" {
-		displayName = readExistingManifestDisplayName(dir, m.APIName)
+	if displayName == "" && existing != nil && existing.DisplayName != "" && existing.DisplayName != m.APIName {
+		displayName = existing.DisplayName
 	}
 	if displayName == "" {
 		displayName = m.APIName
@@ -189,7 +184,7 @@ func buildMCPBManifest(dir string, m CLIManifest) MCPBManifest {
 		// regeneration. A hardcoded "1.0.0" would defeat the host's
 		// "newer bundle available" prompt.
 		Version:     bundleVersion(m),
-		Description: manifestDescription(dir, m, displayName),
+		Description: manifestDescription(existing, m, displayName),
 		Author:      MCPBAuthor{Name: "CLI Printing Press"},
 		License:     "Apache-2.0",
 		Server: MCPBServer{
@@ -223,88 +218,44 @@ func bundleVersion(m CLIManifest) string {
 	return "0.0.0"
 }
 
-// manifestDescription prefers the catalog/spec description verbatim and
-// only falls back to a derived sentence when nothing better is available.
-// We deliberately keep this single-line — long_description is reserved for
-// multi-paragraph context, which we don't synthesize from spec data today.
-//
-// Resolution order: the .printing-press.json description (canonical source
-// when the printing-press version that produced the CLI populates it) →
-// the existing manifest.json's description (preserves rich descriptions
-// baked by older codemods or hand-edits when .printing-press.json lacks
-// the field — e.g., library CLIs printed under v1.x predate the field) →
-// derived from displayName.
-func manifestDescription(dir string, m CLIManifest, displayName string) string {
-	// Preserve hand-edits to manifest.json before falling back to the
-	// canonical description from .printing-press.json. mcp-sync's job
-	// is to migrate the MCP surface, not to clobber user-curated
-	// manifest content. readExistingManifestDescription only returns
-	// content that's neither empty nor the derived "<displayName> API
-	// surface as MCP tools." default, so canonical still wins when the
-	// existing description was itself derived. For initial generation
-	// (no prior manifest) the read fails and canonical takes over.
-	if existing := readExistingManifestDescription(dir, displayName); existing != "" {
-		return existing
+// manifestDescription returns the existing hand-edited description over
+// the canonical one from .printing-press.json. The existing snapshot's
+// description is only treated as "hand-edited" when it differs from the
+// derived default — so a prior derived default still loses to canonical.
+func manifestDescription(existing *existingMCPBManifest, m CLIManifest, displayName string) string {
+	derivedDefault := displayName + " API surface as MCP tools."
+	if existing != nil && existing.Description != "" && existing.Description != derivedDefault {
+		return existing.Description
 	}
 	if m.Description != "" {
 		return m.Description
 	}
-	return displayName + " API surface as MCP tools."
+	return derivedDefault
 }
 
-// readExistingManifestDescription returns the description from an existing
-// manifest.json on disk, but only if it's a real description rather than
-// the derived "<displayName> API surface as MCP tools." default we'd
-// otherwise re-emit. Returning the derived form would defeat the
-// fallback chain by treating an old derived-default as "preserved
-// content" and never advancing past it.
-func readExistingManifestDescription(dir, displayName string) string {
-	data, err := os.ReadFile(filepath.Join(dir, MCPBManifestFilename))
-	if err != nil {
-		return ""
-	}
-	var existing struct {
-		Description string `json:"description"`
-	}
-	if err := json.Unmarshal(data, &existing); err != nil {
-		return ""
-	}
-	derivedDefault := displayName + " API surface as MCP tools."
-	if existing.Description == "" || existing.Description == derivedDefault {
-		return ""
-	}
-	return existing.Description
+// existingMCPBManifest is the subset of manifest.json the manifest writer
+// reads when refreshing a published CLI's bundle. Single load site so the
+// display_name and description preservation rules don't each re-read the
+// file on every WriteMCPBManifest call.
+type existingMCPBManifest struct {
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
 }
 
-// readExistingManifestDisplayName returns the display_name from an
-// existing manifest.json if it's a real brand name. The only form we
-// explicitly reject is the bare API slug (lowercase, e.g. "espn") that
-// buildMCPBManifest emits as the last-resort fallback. Anything else —
-// "ESPN", "Wikipedia", "Cal.com", "Company GOAT", "PokéAPI" — is real
-// brand content from a hand-edit or codemod and worth preserving across
-// regen. The previous version of this function also rejected
-// title-cased slugs ("Wikipedia" matching titleCaseFirstRune("wikipedia"))
-// on the theory they were derived defaults; that misfired on every
-// single-word brand whose correct casing happens to be Title Case
-// (Wikipedia, Stripe, Discord, Pinterest, …) and dropped the brand back
-// to the lowercase slug. Without an oracle for "is this hand-edited?"
-// the safest rule is "preserve unless it's the lowercase slug we'd
-// otherwise emit as last resort."
-func readExistingManifestDisplayName(dir, apiSlug string) string {
+// loadExistingMCPBManifest returns nil when the file is missing or
+// unparseable. Callers branch on nil; non-nil means the snapshot is
+// usable but each field still needs its own "is this a derived default?"
+// check (see buildMCPBManifest and manifestDescription).
+func loadExistingMCPBManifest(dir string) *existingMCPBManifest {
 	data, err := os.ReadFile(filepath.Join(dir, MCPBManifestFilename))
 	if err != nil {
-		return ""
+		return nil
 	}
-	var existing struct {
-		DisplayName string `json:"display_name"`
-	}
+	var existing existingMCPBManifest
 	if err := json.Unmarshal(data, &existing); err != nil {
-		return ""
+		return nil
 	}
-	if existing.DisplayName == "" || existing.DisplayName == apiSlug {
-		return ""
-	}
-	return existing.DisplayName
+	return &existing
 }
 
 // buildMCPBEnv maps each declared auth env var into the launch spec's env
