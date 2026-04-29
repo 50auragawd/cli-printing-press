@@ -180,6 +180,20 @@ func parse(data []byte, lenient bool) (*spec.APISpec, error) {
 		version = strings.TrimSpace(doc.Info.Version)
 	}
 
+	// Extract x-display-name extension. Carries the human-readable
+	// brand name when it differs from the slug-derived form ("Cal.com"
+	// vs "Cal Com"). Without this, the OpenAPI parser leaves
+	// DisplayName empty and downstream consumers fall back to
+	// naming.HumanName(slug), which deforms multi-word brands.
+	var displayName string
+	if doc.Info != nil && doc.Info.Extensions != nil {
+		if raw, ok := doc.Info.Extensions["x-display-name"]; ok {
+			if s, ok := raw.(string); ok {
+				displayName = strings.TrimSpace(s)
+			}
+		}
+	}
+
 	// Extract website URL from spec metadata (contact URL, externalDocs, or x-website)
 	var websiteURL string
 	if doc.Info != nil {
@@ -262,6 +276,7 @@ func parse(data []byte, lenient bool) (*spec.APISpec, error) {
 
 	result := &spec.APISpec{
 		Name:        name,
+		DisplayName: displayName,
 		Description: description,
 		Version:     version,
 		BaseURL:     baseURL,

@@ -1,6 +1,12 @@
 openapi: "3.0.3"
 info:
   title: Printing Press Golden API
+  # Distinctively non-slug-derived ("Printing Press Studio" vs HumanName
+  # of slug "printing-press-golden" -> "Printing Press Golden"). Locks
+  # in that x-display-name overrides the slug-derived fallback all the
+  # way through to .printing-press.json, manifest.json, and the MCP
+  # server identity in cmd/.../main.go.
+  x-display-name: "Printing Press Studio"
   version: "2026.04"
   description: Purpose-built fixture for golden generation coverage.
 servers:

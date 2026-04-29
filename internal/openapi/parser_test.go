@@ -130,6 +130,71 @@ components:
 	assert.NotContains(t, fieldNames, "_internal")
 }
 
+func TestParseReadsXDisplayName(t *testing.T) {
+	spec := []byte(`
+openapi: "3.0.0"
+info:
+  title: Cal.com API v2
+  x-display-name: "Cal.com"
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: OK
+`)
+	parsed, err := Parse(spec)
+	require.NoError(t, err)
+	assert.Equal(t, "Cal.com", parsed.DisplayName)
+}
+
+func TestParseTrimsWhitespaceFromXDisplayName(t *testing.T) {
+	spec := []byte(`
+openapi: "3.0.0"
+info:
+  title: Test API
+  x-display-name: "  Brand Name  "
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: OK
+`)
+	parsed, err := Parse(spec)
+	require.NoError(t, err)
+	assert.Equal(t, "Brand Name", parsed.DisplayName)
+}
+
+func TestParseLeavesDisplayNameEmptyWhenAbsent(t *testing.T) {
+	spec := []byte(`
+openapi: "3.0.0"
+info:
+  title: Test API
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: OK
+`)
+	parsed, err := Parse(spec)
+	require.NoError(t, err)
+	assert.Equal(t, "", parsed.DisplayName)
+}
+
 func TestIsOpenAPI(t *testing.T) {
 	t.Parallel()
 

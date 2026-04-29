@@ -13,7 +13,7 @@ import (
 
 func main() {
 	s := server.NewMCPServer(
-		"Printing Press Golden",
+		"Printing Press Studio",
 		"1.0.0",
 		server.WithToolCapabilities(false),
 	)
