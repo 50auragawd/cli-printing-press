@@ -568,11 +568,8 @@ func ExitCode(err error) int { return 0 }
 }
 
 // TestEnsureRootCmdExportDetectsFeaturesAcrossPackage asserts that
-// suggestFlag and Deliver are detected even when their definitions live
-// in sibling files (helpers.go, deliver.go) rather than root.go itself.
-// By generator convention they always live in siblings, so detection
-// scoped to root.go alone would miss every real CLI and emit empty
-// prolog blocks.
+// suggestFlag and Deliver are detected even when their definitions
+// live in sibling files (helpers.go, deliver.go) rather than root.go.
 func TestEnsureRootCmdExportDetectsFeaturesAcrossPackage(t *testing.T) {
 	t.Parallel()
 

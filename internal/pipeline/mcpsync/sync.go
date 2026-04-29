@@ -273,8 +273,6 @@ func ensureEndpointAnnotation(path, annotationLine string) error {
 }
 
 // pkgContainsDecl reports whether any .go file in pkgDir contains decl.
-// Used to detect opt-in template features (suggestFlag, Deliver) whose
-// supporting code lives in sibling files rather than root.go itself.
 // Skips _test.go files so test fixtures don't trigger false positives.
 func pkgContainsDecl(pkgDir, decl string) (bool, error) {
 	entries, err := os.ReadDir(pkgDir)
@@ -326,8 +324,6 @@ func ensureRootCmdExport(cliDir string) error {
 	// Skip prolog blocks whose supporting types/functions aren't in the
 	// existing source — older library CLIs predate suggestFlag and
 	// Deliver and would otherwise fail to build with "undefined" errors.
-	// Scan the whole cli package, not just root.go: by convention the
-	// generator emits suggestFlag in helpers.go and Deliver in deliver.go.
 	pkgDir := filepath.Join(cliDir, "internal", "cli")
 	hasSuggestFlag, err := pkgContainsDecl(pkgDir, "func suggestFlag(")
 	if err != nil {
