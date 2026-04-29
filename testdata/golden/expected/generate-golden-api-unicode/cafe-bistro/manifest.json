@@ -1,0 +1,39 @@
+{
+  "author": {
+    "name": "CLI Printing Press"
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "description": "Cafe Bistro API surface as MCP tools.",
+  "display_name": "Cafe Bistro",
+  "license": "Apache-2.0",
+  "manifest_version": "0.3",
+  "name": "cafe-bistro-pp-mcp",
+  "server": {
+    "entry_point": "bin/cafe-bistro-pp-mcp",
+    "mcp_config": {
+      "args": [],
+      "command": "${__dirname}/bin/cafe-bistro-pp-mcp",
+      "env": {
+        "CAFE_BISTRO_API_KEY_AUTH": "${user_config.cafe_bistro_api_key_auth}"
+      }
+    },
+    "type": "binary"
+  },
+  "user_config": {
+    "cafe_bistro_api_key_auth": {
+      "description": "Sets CAFE_BISTRO_API_KEY_AUTH for the Cafe Bistro MCP server.",
+      "required": true,
+      "sensitive": true,
+      "title": "CAFE_BISTRO_API_KEY_AUTH",
+      "type": "string"
+    }
+  },
+  "version": "<PRINTING_PRESS_VERSION>"
+}

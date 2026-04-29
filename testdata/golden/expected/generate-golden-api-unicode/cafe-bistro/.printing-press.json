@@ -1,0 +1,20 @@
+{
+  "api_name": "cafe-bistro",
+  "api_version": "1.0.0",
+  "auth_env_vars": [
+    "CAFE_BISTRO_API_KEY_AUTH"
+  ],
+  "auth_type": "api_key",
+  "cli_name": "cafe-bistro-pp-cli",
+  "display_name": "Cafe Bistro",
+  "generated_at": "<GENERATED_AT>",
+  "mcp_binary": "cafe-bistro-pp-mcp",
+  "mcp_ready": "full",
+  "mcp_tool_count": 1,
+  "printing_press_version": "<PRINTING_PRESS_VERSION>",
+  "schema_version": 1,
+  "spec_checksum": "sha256:e6ea3b00555807d26e1d0e1a17e61983fbe9a19d94c4206c848690ad82fa1649",
+  "spec_format": "openapi3",
+  "spec_path": "testdata/golden/fixtures/golden-api-unicode.yaml",
+  "spec_url": "file://testdata/golden/fixtures/golden-api-unicode.yaml"
+}
