@@ -701,6 +701,116 @@ func TestWriteMCPBManifest(t *testing.T) {
 	})
 }
 
+// TestWriteMCPBManifestPreservesExistingDisplayName covers the regen path
+// (mcp-sync against an existing CLI with manifest.json on disk). Single-
+// word brand names — "Wikipedia", "Stripe", "Discord" — must round-trip
+// unchanged. Earlier logic rejected them as derived defaults because the
+// title-cased slug happened to match the brand, regressing display_name
+// to the lowercase slug.
+func TestWriteMCPBManifestPreservesExistingDisplayName(t *testing.T) {
+	cases := []struct {
+		name     string
+		apiSlug  string
+		existing string
+		want     string
+	}{
+		{"single-word title-case brand (Wikipedia)", "wikipedia", "Wikipedia", "Wikipedia"},
+		{"single-word title-case brand (Stripe)", "stripe", "Stripe", "Stripe"},
+		{"all-caps brand (ESPN)", "espn", "ESPN", "ESPN"},
+		{"branded with punctuation (Cal.com)", "cal-com", "Cal.com", "Cal.com"},
+		{"multi-word brand (Company GOAT)", "company-goat", "Company GOAT", "Company GOAT"},
+		{"lowercase slug treated as derived fallback", "espn", "espn", "espn"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// Seed an existing manifest.json with the brand-cased display_name
+			// the way a published library CLI would carry it.
+			seed := MCPBManifest{
+				ManifestVersion: MCPBManifestVersion,
+				Name:            tc.apiSlug + "-pp-mcp",
+				DisplayName:     tc.existing,
+				Description:     "stale description",
+			}
+			seedData, err := json.Marshal(seed)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, MCPBManifestFilename), seedData, 0o644))
+
+			// Write a CLIManifest WITHOUT a DisplayName — forces the chain
+			// to fall through to readExistingManifestDisplayName.
+			writeManifest(t, dir, CLIManifest{
+				APIName:   tc.apiSlug,
+				MCPBinary: tc.apiSlug + "-pp-mcp",
+				MCPReady:  "full",
+			})
+
+			require.NoError(t, WriteMCPBManifest(dir))
+			got := readMCPBManifest(t, dir)
+			assert.Equal(t, tc.want, got.DisplayName)
+		})
+	}
+}
+
+// TestWriteMCPBManifestPreservesExistingDescription covers the regen
+// path: a hand-curated manifest.json description must survive mcp-sync
+// even when .printing-press.json carries a different "canonical"
+// description. Pre-fix, m.Description (from .printing-press.json)
+// silently overwrote hand-edits to manifest.json's description.
+func TestWriteMCPBManifestPreservesExistingDescription(t *testing.T) {
+	t.Run("hand-edited description preserved over canonical", func(t *testing.T) {
+		dir := t.TempDir()
+		handEdit := "Find the best version of any recipe across 37 trusted sites — trust-aware ranking weights real reader signal."
+		seed := MCPBManifest{
+			ManifestVersion: MCPBManifestVersion,
+			Name:            "recipe-goat-pp-mcp",
+			DisplayName:     "Recipe Goat",
+			Description:     handEdit,
+		}
+		seedData, err := json.Marshal(seed)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, MCPBManifestFilename), seedData, 0o644))
+
+		writeManifest(t, dir, CLIManifest{
+			APIName:     "recipe-goat",
+			DisplayName: "Recipe Goat",
+			MCPBinary:   "recipe-goat-pp-mcp",
+			MCPReady:    "full",
+			Description: "Recipe GOAT aggregates recipes from canonical-description-source.json",
+		})
+
+		require.NoError(t, WriteMCPBManifest(dir))
+		got := readMCPBManifest(t, dir)
+		assert.Equal(t, handEdit, got.Description, "hand-edited manifest description must survive regen")
+	})
+
+	t.Run("derived-default existing description refreshed from canonical", func(t *testing.T) {
+		dir := t.TempDir()
+		// Existing description IS the derived default. We expect canonical
+		// to win because there's nothing meaningful to preserve.
+		seed := MCPBManifest{
+			ManifestVersion: MCPBManifestVersion,
+			Name:            "wikipedia-pp-mcp",
+			DisplayName:     "Wikipedia",
+			Description:     "Wikipedia API surface as MCP tools.",
+		}
+		seedData, err := json.Marshal(seed)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, MCPBManifestFilename), seedData, 0o644))
+
+		writeManifest(t, dir, CLIManifest{
+			APIName:     "wikipedia",
+			DisplayName: "Wikipedia",
+			MCPBinary:   "wikipedia-pp-mcp",
+			MCPReady:    "full",
+			Description: "Wikipedia REST API. Article summaries, search, related topics.",
+		})
+
+		require.NoError(t, WriteMCPBManifest(dir))
+		got := readMCPBManifest(t, dir)
+		assert.Equal(t, "Wikipedia REST API. Article summaries, search, related topics.", got.Description)
+	})
+}
+
 func writeManifest(t *testing.T, dir string, m CLIManifest) {
 	t.Helper()
 	data, err := json.Marshal(m)

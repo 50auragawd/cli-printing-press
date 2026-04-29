@@ -161,12 +161,17 @@ func WriteMCPBManifestFromStruct(dir string, m CLIManifest) error {
 }
 
 func buildMCPBManifest(dir string, m CLIManifest) MCPBManifest {
-	// Resolution order mirrors manifestDescription: canonical source first
-	// (.printing-press.json populated by spec.display_name on modern
-	// prints), then existing manifest.json for older library CLIs whose
-	// codemod-baked display_name carries the right brand casing, then
-	// derived from the API slug. Without the existing-manifest fallback,
-	// mcp-sync regressed library CLIs from "ESPN" → "espn".
+	// display_name resolution: canonical source first (.printing-press.json
+	// populated by spec.display_name on modern prints), then existing
+	// manifest.json for older library CLIs whose codemod-baked display_name
+	// carries the right brand casing, then derived from the API slug.
+	// Without the existing-manifest fallback, mcp-sync regressed library
+	// CLIs from "ESPN" → "espn".
+	//
+	// Description resolution (in manifestDescription) is *deliberately
+	// reversed* — existing manifest first. Hand-curated descriptions are
+	// the dominant ground truth for mature library CLIs and must survive
+	// regen even when .printing-press.json carries a different value.
 	displayName := m.DisplayName
 	if displayName == "" {
 		displayName = readExistingManifestDisplayName(dir, m.APIName)
@@ -230,11 +235,19 @@ func bundleVersion(m CLIManifest) string {
 // the field — e.g., library CLIs printed under v1.x predate the field) →
 // derived from displayName.
 func manifestDescription(dir string, m CLIManifest, displayName string) string {
-	if m.Description != "" {
-		return m.Description
-	}
+	// Preserve hand-edits to manifest.json before falling back to the
+	// canonical description from .printing-press.json. mcp-sync's job
+	// is to migrate the MCP surface, not to clobber user-curated
+	// manifest content. readExistingManifestDescription only returns
+	// content that's neither empty nor the derived "<displayName> API
+	// surface as MCP tools." default, so canonical still wins when the
+	// existing description was itself derived. For initial generation
+	// (no prior manifest) the read fails and canonical takes over.
 	if existing := readExistingManifestDescription(dir, displayName); existing != "" {
 		return existing
+	}
+	if m.Description != "" {
+		return m.Description
 	}
 	return displayName + " API surface as MCP tools."
 }
@@ -264,13 +277,19 @@ func readExistingManifestDescription(dir, displayName string) string {
 }
 
 // readExistingManifestDisplayName returns the display_name from an
-// existing manifest.json if it's a real brand name rather than a derived
-// fallback. The two derived forms we explicitly reject: the bare API slug
-// (lowercase, e.g. "espn") that buildMCPBManifest emits when nothing
-// better is known, and the title-cased slug ("Espn") that the older
-// spec.EffectiveDisplayName fallback used to produce. Anything else —
-// "ESPN", "Cal.com", "Company GOAT", "PokéAPI" — is real brand content
-// from a hand-edit or a codemod and worth preserving across regen.
+// existing manifest.json if it's a real brand name. The only form we
+// explicitly reject is the bare API slug (lowercase, e.g. "espn") that
+// buildMCPBManifest emits as the last-resort fallback. Anything else —
+// "ESPN", "Wikipedia", "Cal.com", "Company GOAT", "PokéAPI" — is real
+// brand content from a hand-edit or codemod and worth preserving across
+// regen. The previous version of this function also rejected
+// title-cased slugs ("Wikipedia" matching titleCaseFirstRune("wikipedia"))
+// on the theory they were derived defaults; that misfired on every
+// single-word brand whose correct casing happens to be Title Case
+// (Wikipedia, Stripe, Discord, Pinterest, …) and dropped the brand back
+// to the lowercase slug. Without an oracle for "is this hand-edited?"
+// the safest rule is "preserve unless it's the lowercase slug we'd
+// otherwise emit as last resort."
 func readExistingManifestDisplayName(dir, apiSlug string) string {
 	data, err := os.ReadFile(filepath.Join(dir, MCPBManifestFilename))
 	if err != nil {
@@ -285,25 +304,7 @@ func readExistingManifestDisplayName(dir, apiSlug string) string {
 	if existing.DisplayName == "" || existing.DisplayName == apiSlug {
 		return ""
 	}
-	titleCased := titleCaseFirstRune(apiSlug)
-	if existing.DisplayName == titleCased {
-		return ""
-	}
 	return existing.DisplayName
-}
-
-// titleCaseFirstRune capitalizes the first ASCII letter of slug. Mirrors
-// the older spec.EffectiveDisplayName fallback so we can detect and
-// reject preserved title-cased slugs that masquerade as real brand names.
-func titleCaseFirstRune(slug string) string {
-	if slug == "" {
-		return ""
-	}
-	runes := []rune(slug)
-	if runes[0] >= 'a' && runes[0] <= 'z' {
-		runes[0] -= 'a' - 'A'
-	}
-	return string(runes)
 }
 
 // buildMCPBEnv maps each declared auth env var into the launch spec's env

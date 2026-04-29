@@ -347,10 +347,16 @@ func newRootCmd(flags *rootFlags) *cobra.Command {
 	return writeFileAtomic(path, []byte(src))
 }
 
-// readExistingManifestDisplayName returns the display_name from an existing
-// manifest.json on disk if it's a real brand name rather than the
-// title-cased slug fallback. Used by Sync to preserve PR #145 codemod
-// brand-casing for library CLIs printed before spec.display_name existed.
+// readExistingManifestDisplayName returns the display_name from an
+// existing manifest.json on disk if it's a real brand name. The only
+// form rejected is the bare lowercase slug ("espn") that mcp-sync would
+// otherwise re-emit as the last-resort fallback; anything else is
+// preserved. The previous version also rejected title-cased slugs
+// (treating "Wikipedia" matching titleCaseFromSlug("wikipedia") as a
+// derived default), but that misfires on every single-word brand whose
+// correct casing is Title Case (Wikipedia, Stripe, Discord, Pinterest…)
+// and silently regressed the manifest's display_name back to the
+// lowercase slug.
 func readExistingManifestDisplayName(cliDir string) string {
 	manifestData, err := os.ReadFile(filepath.Join(cliDir, "manifest.json"))
 	if err != nil {
@@ -363,34 +369,11 @@ func readExistingManifestDisplayName(cliDir string) string {
 	if err := json.Unmarshal(manifestData, &existing); err != nil {
 		return ""
 	}
-	if existing.DisplayName == "" {
-		return ""
-	}
-	// The derived form for old prints is the title-cased mcp-binary slug
-	// minus the "-pp-mcp" suffix (e.g., "espn-pp-mcp" → "Espn"). If the
-	// existing display_name matches that derived shape, treat it as no
-	// brand info and fall through.
-	derived := titleCaseFromSlug(strings.TrimSuffix(existing.Name, "-pp-mcp"))
-	if existing.DisplayName == derived {
+	apiSlug := strings.TrimSuffix(existing.Name, "-pp-mcp")
+	if existing.DisplayName == "" || existing.DisplayName == apiSlug {
 		return ""
 	}
 	return existing.DisplayName
-}
-
-// titleCaseFromSlug capitalizes the first rune of a slug. Approximates
-// the spec.EffectiveDisplayName fallback for slugs without an explicit
-// display_name (e.g., "espn" → "Espn"). Mirrors the case-detection logic
-// readExistingManifestDisplayName uses to decide whether the existing
-// manifest carries real brand information.
-func titleCaseFromSlug(slug string) string {
-	if slug == "" {
-		return ""
-	}
-	runes := []rune(slug)
-	if runes[0] >= 'a' && runes[0] <= 'z' {
-		runes[0] -= 'a' - 'A'
-	}
-	return string(runes)
 }
 
 // validateSpecNameMatchesDir refuses to migrate when spec.yaml.name
