@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1557,11 +1558,30 @@ func checkExamples(dir string) ExampleCheckResult {
 }
 
 func discoverExampleCheckCommands(binaryPath string) ([][]string, error) {
-	out, err := runDogfoodCmd(binaryPath, 15*time.Second, "agent-context")
-	if err != nil {
-		return nil, err
+	// Use Output() rather than the shared runDogfoodCmd which calls
+	// CombinedOutput. agent-context emits JSON to stdout; any stderr
+	// leak (deprecation warnings, config-load notices, panics that
+	// race with the JSON write) ends up prefixed to stdout in
+	// CombinedOutput and breaks json.Unmarshal with "invalid character
+	// 'E' looking for beginning of value" or similar.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binaryPath, "agent-context")
+	out, err := cmd.Output()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("agent-context timed out after 15s")
 	}
-	paths, err := dogfoodExampleCommandPathsFromAgentContext([]byte(out))
+	if err != nil {
+		// Surface stderr in the error so the dogfood "Examples" check's
+		// skip-detail line tells the user what actually broke rather
+		// than just "exit status 1".
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return nil, fmt.Errorf("agent-context failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("agent-context failed: %w", err)
+	}
+	paths, err := dogfoodExampleCommandPathsFromAgentContext(out)
 	if err != nil {
 		return nil, err
 	}

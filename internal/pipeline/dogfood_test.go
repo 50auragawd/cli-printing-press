@@ -3,6 +3,7 @@ package pipeline
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1616,4 +1617,65 @@ func TestCollectDogfoodIssues_ThinTestsNotHardIssue(t *testing.T) {
 		assert.NotContains(t, i, "recipes")
 		assert.NotContains(t, i, "thin")
 	}
+}
+
+// TestDiscoverExampleCheckCommandsIgnoresStderrNoise — printed CLIs
+// commonly write to stderr before agent-context succeeds (deprecation
+// warnings, config-load notices, panics that race with the JSON
+// write). Previously runDogfoodCmd merged stderr into stdout via
+// CombinedOutput, prefixing the JSON with text and breaking
+// json.Unmarshal with "invalid character 'E' looking for beginning of
+// value". discoverExampleCheckCommands must read stdout only so the
+// dogfood "Examples" check survives stderr leaks.
+func TestDiscoverExampleCheckCommandsIgnoresStderrNoise(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a shell script as the fake binary; skip on Windows")
+	}
+	t.Parallel()
+
+	script := `#!/bin/sh
+# Deliberately write to stderr before the JSON write — simulates a
+# printed CLI emitting a deprecation warning or config-load notice.
+echo "WARN: legacy config path detected" >&2
+cat <<EOF
+{
+  "commands": [
+    {"name": "posts", "subcommands": [{"name": "list"}]},
+    {"name": "auth", "subcommands": [{"name": "login"}]}
+  ]
+}
+EOF
+`
+	binPath := filepath.Join(t.TempDir(), "fakebin")
+	require.NoError(t, os.WriteFile(binPath, []byte(script), 0o755))
+
+	paths, err := discoverExampleCheckCommands(binPath)
+	require.NoError(t, err, "stderr noise must not break JSON parsing")
+	// auth/login is filtered out because "auth" is in the framework
+	// skip set; only the posts subtree should survive.
+	assert.Equal(t, [][]string{{"posts", "list"}}, paths)
+}
+
+// TestDiscoverExampleCheckCommandsSurfacesStderrOnFailure — when the
+// binary actually fails (non-zero exit), stderr carries the reason
+// and the caller deserves to see it. Previously a CombinedOutput
+// failure left the user with "exit status 1"; the new path uses
+// exec.ExitError.Stderr to surface the underlying message.
+func TestDiscoverExampleCheckCommandsSurfacesStderrOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a shell script as the fake binary; skip on Windows")
+	}
+	t.Parallel()
+
+	script := `#!/bin/sh
+echo "config file ~/.fakebin/config.toml: permission denied" >&2
+exit 1
+`
+	binPath := filepath.Join(t.TempDir(), "fakebin")
+	require.NoError(t, os.WriteFile(binPath, []byte(script), 0o755))
+
+	_, err := discoverExampleCheckCommands(binPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "permission denied",
+		"stderr from the failed agent-context call must surface in the error")
 }
