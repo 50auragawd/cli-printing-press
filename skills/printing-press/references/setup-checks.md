@@ -86,9 +86,9 @@ If the user picks **Yes**, run:
 go install github.com/mvanhorn/cli-printing-press/v4/cmd/printing-press@latest
 ```
 
-After it completes, confirm with `printing-press version --json` and tell the user `"Upgraded to v<new>."` Then continue the current setup flow with the newly installed binary.
+After it completes, confirm with `printing-press version --json` and tell the user `"Upgraded to v<new>."` **Continue this current setup run with the freshly installed binary on disk — do not stop, do not reload the session, do not skip the remaining checks (min-binary-version compatibility, etc.).**
 
-Also tell the user to update their installed skills outside the repo checkout:
+Separately, as out-of-band advice for the user's *next* session (not a stop signal for this run), tell them they can also refresh their installed skill files outside the repo checkout by running one of:
 
 ```bash
 gh skill update
@@ -100,7 +100,7 @@ or:
 npx skills update
 ```
 
-These skill-refresh commands are out-of-band follow-up for the user's installed skill files; they are not a stop signal for this run. Tell the user to reload or restart the agent session after the current run so the refreshed skill is used next time, then continue setup.
+These two commands update skill files that live outside the repo; they only take effect after the user reloads or restarts the agent session, which they should do *after* the current run finishes. Frame this clearly to the user as "for next time" guidance, then continue setup with the newly installed binary.
 
 If the upgrade command fails (network error, auth error, etc.), surface the failure to the user and continue with the current binary — do not block the run on a failed upgrade. The user can re-run later.
 
