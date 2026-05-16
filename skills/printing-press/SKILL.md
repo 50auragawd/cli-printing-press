@@ -2591,8 +2591,11 @@ if err := rows.Scan(&id, &name); err != nil { continue }
 var name sql.NullString
 if err := rows.Scan(&id, &name); err != nil { continue }
 result.Name = name.String
+```
 
-// Also right — push the default into the query so the scan target stays bare.
+Also right: push the default into the query so the scan target stays bare.
+
+```sql
 SELECT id, COALESCE(json_extract(data, '$.name'), '') FROM resources WHERE ...
 ```
 
