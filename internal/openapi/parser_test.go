@@ -1899,6 +1899,58 @@ paths:
 	}
 }
 
+// Real-world OpenAPI specs (Tally, others) frequently include {placeholder}
+// tokens in a path template without declaring the corresponding parameter at
+// either the operation or path-item level. The path template is then the only
+// source of truth for what's required. Without synthesizing a Param entry,
+// the generated CLI emits a literal `{organizationId}` URL segment and every
+// request 404s. Mirrors the same enrichment the internal YAML loader applies.
+func TestParseSynthesizesUndeclaredPathPlaceholders(t *testing.T) {
+	t.Parallel()
+	data := []byte(`
+openapi: 3.0.0
+info:
+  title: Hierarchical API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+paths:
+  /organizations/{organizationId}/invites:
+    get:
+      summary: List organization invites
+      responses:
+        "200":
+          description: ok
+  /organizations/{organizationId}/users:
+    get:
+      summary: List organization users
+      responses:
+        "200":
+          description: ok
+`)
+
+	parsed, err := Parse(data)
+	require.NoError(t, err)
+
+	for _, path := range []string{
+		"/organizations/{organizationId}/invites",
+		"/organizations/{organizationId}/users",
+	} {
+		endpoint := findEndpoint(t, parsed, path)
+		var orgID *spec.Param
+		for i := range endpoint.Params {
+			if endpoint.Params[i].Name == "organizationId" {
+				orgID = &endpoint.Params[i]
+				break
+			}
+		}
+		if assert.NotNilf(t, orgID, "path %q must surface an organizationId param even when operation declared none", path) {
+			assert.True(t, orgID.Positional, "synthesized path placeholders must be positional")
+			assert.True(t, orgID.Required, "synthesized path placeholders must be required")
+		}
+	}
+}
+
 func TestCleanSpecName(t *testing.T) {
 	tests := []struct {
 		title string
