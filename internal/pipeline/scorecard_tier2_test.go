@@ -3623,3 +3623,46 @@ func isTerminal() bool { return false }`,
 		})
 	}
 }
+
+// TestScoreVision_LearnLoopPresenceAddsHalfPoint pins the presence-only credit
+// for the self-learning recall/teach loop. A CLI that ships internal/learn/learn.go
+// gains 0.5 in Vision tier 1 over an otherwise-identical CLI without it. The
+// credit is for the loop's presence, not its richness — teach traffic
+// accumulates value at runtime, not at print time.
+//
+// The fixture is sized so the +0.5 credit crosses an integer boundary: baseline
+// scores 3 (3.5 total → int trunc) and the learn-enabled fixture scores 4
+// (4.0 total → int).
+func TestScoreVision_LearnLoopPresenceAddsHalfPoint(t *testing.T) {
+	build := func(includeLearn bool) string {
+		dir := t.TempDir()
+		writeScorecardFixture(t, dir, "internal/cli/root.go", `package cli
+func newRootCmd() { rootCmd.AddCommand(newSearchCmd(nil), newExportCmd(nil)) }
+`)
+		writeScorecardFixture(t, dir, "internal/cli/search.go", `package cli
+func newSearchCmd(flags any) {}
+`)
+		writeScorecardFixture(t, dir, "internal/cli/export.go", `package cli
+func newExportCmd(flags any) {}
+`)
+		writeScorecardFixture(t, dir, "internal/store/store.go", `package store
+`)
+		if includeLearn {
+			writeScorecardFixture(t, dir, "internal/learn/learn.go", `package learn
+// Recall returns a cached completion for the given query or empty string when
+// no pattern matches. Teach writes back through Teach for the next caller.
+func Recall(query string) string { return "" }
+func Teach(query, answer string) error { return nil }
+`)
+		}
+		return dir
+	}
+
+	baseline := scoreVision(build(false))
+	withCredit := scoreVision(build(true))
+
+	assert.Equal(t, 3, baseline,
+		"export+store+search wiring should sum to 3.5 tier points → int 3")
+	assert.Equal(t, 4, withCredit,
+		"adding internal/learn/learn.go should push tier 1 to 4.0 → int 4")
+}
