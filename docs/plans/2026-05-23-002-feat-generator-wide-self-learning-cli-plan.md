@@ -1493,6 +1493,81 @@ Every failure mode preserves user data (taught learnings, custom patterns, entit
 
 ***
 
+## Execution Retrospective (Phase 1 + Phase 2)
+
+Captured 2026-05-24 after Phase 2 U14 pilot landed at 5/5 CLIs across PR cli-printing-press#2085, library#826, and library#827.
+
+### Phase 1: Generator-side foundation
+
+11 implementation units shipped across 4 dispatch batches via Claude Code worktree-isolated subagents:
+
+* Batch 1 (parallel): U1, U2, U6, U11 — no file overlap
+* Batch 2 (one heavy agent): U3+U4+U5 combined — the ~8500 LOC port from prediction-goat
+* Batch 3 (serial): U7 (Cobra commands), then U8 (spec-driven config init) due to shared root.go.tmpl
+* Batch 4 (parallel): U10 (docs templates), U12 (golden fixture)
+
+Total Phase 1 time: ~3-4 hours of wall clock with parallel dispatch. 1 dedup-fix commit needed during U6 merge (LearnConfig field declared twice on APISpec). 1 lint fix (obsolete `tc := tc` loop-var capture). 5447 tests pass after merge.
+
+### Phase 2: Sweep tool + pilot — 4 iteration cycles
+
+The pilot surfaced bugs the v1 unit tests missed because they didn't exercise the tool against real-world library artifacts:
+
+1. **Bug A** (`store_migration.go`'s `ensureStoreSchemaVersion`): off-by-one splice put `const StoreSchemaVersion = 3` BEFORE the `package store` declaration. Go parser rejected. Fix: use `go/parser` AST walk to find the imports-block end and splice after it, not string-scan from the package keyword.
+2. **Bug B** (root.go AST patcher): emitted `&flags` when host signature had `flags *rootFlags`, producing `**rootFlags` type mismatch. Fix: detect scope type and emit `&flags` (when local value) or `flags` (when ptr param).
+3. **Bug C** (emitted `teach.go` / `learn_init.go`): referenced `store.OpenWithContext`, `dryRunOK`, `printJSONFiltered`, `parentNoSubcommandRunE` helpers that older library CLIs don't carry. Fix: inline minimal equivalents (`learnPrintJSON` etc.) in the templates, dropped `ctx` param on `store.Open`. Diverges from the generator's `teach.go.tmpl`; documented as intentional divergence in the sweep tool's README + a per-statement comment at the top of the emitted file.
+4. **Bug D** (`canonicalLearnMigrationsBlock`): 5 `CREATE TABLE` / `CREATE VIRTUAL TABLE` statements emitted without the closing `)`. Go source compiled, but SQLite rejected migration at `migrate()` time with `incomplete input (1)`. Fix: one line per statement.
+
+Bonus extensions discovered during fixes:
+
+* **`store.Store.DB()` accessor backfill**: the emitted `teach.go` calls `s.DB()` but older library stores didn't expose it. Sweep now adds the accessor if missing.
+* **Factory root.go shape** (instacart: `func Root() *cobra.Command` with no `rootFlags` struct): detector existed but refused. Now supported via a tiny `learn_root_shim.go` emit that introduces the `rootFlags` struct + helpers the templates need.
+* **`stmts := []string{...}` migrations naming**: instacart and a handful of other CLIs use `stmts` instead of `migrations`. Anchor detector now accepts both.
+
+### The fresh-HOME lesson
+
+v2's "recall FAIL" diagnoses were partially false positives. The swept CLIs hit a stale `~/.local/share/<cli>/data.db` left over from before the CLI's events table was extended with `season_year` column (espn), pre-schema-bump rows (others). The CREATE INDEX migration referencing the new column failed against the old db. Diagnosis: validation tests MUST use `HOME=/tmp/fresh-$(uuidgen)` for every smoke test. Without that, stale user state contaminates every pilot validation across the library.
+
+Same lesson generalizes: any CLI that relies on per-user persistent state can't be validated end-to-end without a fresh HOME. The sweep tool itself is fine.
+
+### Validation gate ordering
+
+The right validation sequence per pilot CLI:
+
+1. `go build ./...` — catches Bug A (Go parse), Bug B (type mismatch), Bug C (undefined helpers)
+2. `go test ./...` — catches issues at the test fixtures (lookups/patterns packages); CLI internal/store tests catch Bug D when fresh DB used
+3. `go build -o /tmp/<cli> ./cmd/<cli>-pp-cli` — catches Bug C if not caught earlier
+4. `HOME=/tmp/fresh-X /tmp/<cli> --help` — catches command registration
+5. `HOME=/tmp/fresh-X /tmp/<cli> recall "test" --json` — catches Bug D at runtime + validates JSON envelope
+6. `govulncheck ./...` — catches dep vulnerabilities
+
+v1 stopped at step 1 failing. v2 stopped at step 5 (Bug D). v3 passed all but instacart (factory shape). v4 closed the loop.
+
+### Cost of iteration
+
+The 4-iteration cycle isn't waste; each iteration revealed a class of bug the previous one masked. Lessons for U15 (full library sweep):
+
+* Real-world artifacts surface bugs sandbox/fixture tests don't. Plan for at least 1 round of unexpected bugs even on a tested tool.
+* Per-CLI validation in the actual library directory layout (not in `/tmp` clones) is where most issues surface. The shape variance across published CLIs is wider than any fixture set captures.
+* Worktree-isolated agents are great for parallel work but can't catch class-of-bugs that need real artifacts to surface. The orchestrator's manual sanity check between batches IS valuable.
+
+### Bugs caught by the pilot that would have shipped to U15 unfixed
+
+All 4 bugs (A/B/C/D) plus the factory-shape gap plus the `stmts` naming variant plus the DB() accessor gap plus the stale-HOME diagnostic confusion. If U15 had shipped to 168 CLIs without the pilot, every one would have failed at runtime with Bug D, and ~30% would have failed at build with Bug A or B depending on root.go shape distribution.
+
+### Phase 3 readiness
+
+Tool is now sound enough to run U15. The remaining gates per the plan:
+
+* 1-2 weeks of dogfood traffic against the 5 pilots
+* <5% false-positive recall rate (20-query manual grading sample per pilot)
+* Transferability test (10 novel-but-substitutable queries per pilot)
+* Zero existing-command regressions
+* Sweep tool's `-only` flag bug (declared `var onlySlug string` but never wired to a flag) fixed — minor; the `SWEEP_LIBRARY_ROOT` sandbox approach works around it
+
+Measurement window starts the day the pilots merge to main.
+
+***
+
 ## Documentation Plan
 
 * **AGENTS.md (cli-printing-press)**: extend "Generator-reserved namespaces" + "Cross-repo dependency" sections to cover learn.
