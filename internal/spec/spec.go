@@ -194,6 +194,7 @@ type APISpec struct {
 	Share                       ShareConfig         `yaml:"share,omitempty" json:"share"`                             // git-backed snapshot sharing config; when enabled, emits a `share` subcommand that publishes/subscribes to a git repo
 	MCP                         MCPConfig           `yaml:"mcp,omitempty" json:"mcp"`                                 // MCP server generation config; when unset, small APIs (typed-endpoint count <= DefaultRemoteTransportEndpointThreshold) get stdio+http compiled in by APISpec.EffectiveMCPTransports so the same binary can serve cloud-hosted agents. Larger APIs stay stdio-only by default. Opting into http explicitly adds a --transport/--addr flag surface regardless of size.
 	Throttling                  ThrottlingConfig    `yaml:"throttling,omitempty" json:"throttling"`                   // cost-based throttling config; when Enabled with a recognized Shape, the generator emits a ThrottleState (generic harness) plus a per-Shape parser that reads the API's cost bucket. Only the "shopify" Shape ships in v1.
+	Learn                       LearnConfig         `yaml:"learn,omitempty" json:"learn,omitzero"`                    // self-learning loop config; when Enabled, the generator emits learn-package templates and stamps an additive SQLite schema for taught queries, extracted patterns, and entity lookups. Off by default.
 }
 
 type TierRoutingConfig struct {
@@ -1340,6 +1341,19 @@ type ShareConfig struct {
 	SnapshotTables []string `yaml:"snapshot_tables,omitempty" json:"snapshot_tables,omitempty"` // explicit allowlist of SQLite tables included in the snapshot. Required when Enabled. Names matching denylisted patterns (*_cache, *_secrets, auth_*) are rejected at parse time.
 	DefaultRepo    string   `yaml:"default_repo,omitempty" json:"default_repo,omitempty"`       // optional default git remote (e.g., "git@github.com:acme/linear-snapshots.git"); command-line --repo flag always wins
 	DefaultBranch  string   `yaml:"default_branch,omitempty" json:"default_branch,omitempty"`   // optional default branch for push/pull; blank means "main"
+}
+
+// LearnConfig gates the self-learning loop emitted into a printed CLI. When
+// Enabled, the generator emits the learn package (entities, normalize, match,
+// lookups, patterns, recall, teach) plus an additive SQLite schema for taught
+// queries, extracted patterns, and entity lookups. Off by default; a benign
+// no-op when the spec block is absent.
+//
+// This struct is intentionally minimal in U6 (only the Enabled gate is
+// needed to drive the schema migration emission). U1 extends it with
+// TickerPatterns, Stopwords, and EntityLookupSeeds plus full validation.
+type LearnConfig struct {
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"` // master switch; when false, learn templates and the additive learn-table migrations are not emitted
 }
 
 // MCPConfig declares how the generated MCP server binary is shaped. When the
