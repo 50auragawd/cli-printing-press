@@ -26,7 +26,6 @@ func TestGenerateStoreSchemaVersionBumpedToV3(t *testing.T) {
 		{name: "learn-enabled", learnEnabled: true},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
