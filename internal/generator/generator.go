@@ -1470,6 +1470,18 @@ func (g *Generator) prepareOutput() error {
 		filepath.Join("internal", "mcp", "cobratree"),
 		filepath.Join("internal", "types"),
 	}
+	// Reserve the learn-package directory tree only when the spec opts
+	// in. Keeping these gated avoids creating empty dirs in CLIs that
+	// don't ship the self-learning loop, which would otherwise show up
+	// as untracked dirs in published-library trees.
+	if g.Spec.Learn.Enabled {
+		dirs = append(dirs,
+			filepath.Join("internal", "learn"),
+			filepath.Join("internal", "learn", "entities"),
+			filepath.Join("internal", "learn", "lookups"),
+			filepath.Join("internal", "learn", "patterns"),
+		)
+	}
 
 	for _, d := range dirs {
 		if err := os.MkdirAll(filepath.Join(g.OutputDir, d), 0755); err != nil {
@@ -1693,6 +1705,18 @@ func (g *Generator) renderOptionalSupportFiles() error {
 		}
 	}
 
+	// Emit the self-learning loop (entities + normalize + match +
+	// recall + teach + teach_log + preseed + lookups + patterns) only
+	// when the spec opts in via Learn.Enabled. The schema migrations
+	// for the supporting tables are emitted from store.go.tmpl under
+	// the same gate; see internal/generator/templates/learn/doc.go.tmpl
+	// for the package-level design and the schema-adaptation note.
+	if g.Spec.Learn.Enabled {
+		if err := g.renderLearnFiles(); err != nil {
+			return err
+		}
+	}
+
 	if g.FixtureSet != nil {
 		if err := g.renderTemplate("captured_test.go.tmpl", filepath.Join("internal", "client", "client_captured_test.go"), g.FixtureSet); err != nil {
 			return fmt.Errorf("rendering captured fixture tests: %w", err)
@@ -1735,6 +1759,58 @@ func (g *Generator) renderOptionalSupportFiles() error {
 		}
 	}
 
+	return nil
+}
+
+// renderLearnFiles emits the internal/learn package and its three
+// sub-packages (entities, lookups, patterns) when the spec opts into
+// the self-learning loop. The matching v3 schema migrations are
+// emitted from internal/generator/templates/store.go.tmpl under the
+// same Learn.Enabled gate.
+//
+// The teach_log.go.tmpl file uses the CLI name as the state-directory
+// suffix; every other learn file is data-driven from the spec's
+// LearnConfig values, which the per-CLI startup wires via NewConfig
+// and SeedFromConfig at first run.
+func (g *Generator) renderLearnFiles() error {
+	learnFiles := map[string]string{
+		"learn_entities/config.go.tmpl":       filepath.Join("internal", "learn", "entities", "config.go"),
+		"learn_entities/config_test.go.tmpl":  filepath.Join("internal", "learn", "entities", "config_test.go"),
+		"learn_entities/extract.go.tmpl":      filepath.Join("internal", "learn", "entities", "extract.go"),
+		"learn_entities/extract_test.go.tmpl": filepath.Join("internal", "learn", "entities", "extract_test.go"),
+
+		"learn/doc.go.tmpl":            filepath.Join("internal", "learn", "doc.go"),
+		"learn/normalize.go.tmpl":      filepath.Join("internal", "learn", "normalize.go"),
+		"learn/normalize_test.go.tmpl": filepath.Join("internal", "learn", "normalize_test.go"),
+		"learn/match.go.tmpl":          filepath.Join("internal", "learn", "match.go"),
+		"learn/match_test.go.tmpl":     filepath.Join("internal", "learn", "match_test.go"),
+		"learn/recall.go.tmpl":         filepath.Join("internal", "learn", "recall.go"),
+		"learn/recall_test.go.tmpl":    filepath.Join("internal", "learn", "recall_test.go"),
+		"learn/teach.go.tmpl":          filepath.Join("internal", "learn", "teach.go"),
+		"learn/teach_test.go.tmpl":     filepath.Join("internal", "learn", "teach_test.go"),
+		"learn/teach_log.go.tmpl":      filepath.Join("internal", "learn", "teach_log.go"),
+		"learn/teach_log_test.go.tmpl": filepath.Join("internal", "learn", "teach_log_test.go"),
+		"learn/preseed.go.tmpl":        filepath.Join("internal", "learn", "preseed.go"),
+		"learn/preseed_test.go.tmpl":   filepath.Join("internal", "learn", "preseed_test.go"),
+
+		"learn_lookups/store.go.tmpl":      filepath.Join("internal", "learn", "lookups", "store.go"),
+		"learn_lookups/store_test.go.tmpl": filepath.Join("internal", "learn", "lookups", "store_test.go"),
+		"learn_lookups/seeds.go.tmpl":      filepath.Join("internal", "learn", "lookups", "seeds.go"),
+		"learn_lookups/seeds_test.go.tmpl": filepath.Join("internal", "learn", "lookups", "seeds_test.go"),
+
+		"learn_patterns/doc.go.tmpl":          filepath.Join("internal", "learn", "patterns", "doc.go"),
+		"learn_patterns/store.go.tmpl":        filepath.Join("internal", "learn", "patterns", "store.go"),
+		"learn_patterns/store_test.go.tmpl":   filepath.Join("internal", "learn", "patterns", "store_test.go"),
+		"learn_patterns/extract.go.tmpl":      filepath.Join("internal", "learn", "patterns", "extract.go"),
+		"learn_patterns/extract_test.go.tmpl": filepath.Join("internal", "learn", "patterns", "extract_test.go"),
+		"learn_patterns/apply.go.tmpl":        filepath.Join("internal", "learn", "patterns", "apply.go"),
+		"learn_patterns/apply_test.go.tmpl":   filepath.Join("internal", "learn", "patterns", "apply_test.go"),
+	}
+	for tmplName, outPath := range learnFiles {
+		if err := g.renderTemplate(tmplName, outPath, g.Spec); err != nil {
+			return fmt.Errorf("rendering %s: %w", tmplName, err)
+		}
+	}
 	return nil
 }
 
