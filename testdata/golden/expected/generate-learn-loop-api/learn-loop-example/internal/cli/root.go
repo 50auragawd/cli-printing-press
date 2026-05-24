@@ -231,7 +231,7 @@ Run 'learn-loop-example-pp-cli doctor' to verify auth and connectivity.`,
 		// touch the local store (auth, doctor, help, etc.) and for
 		// --no-learn invocations so deterministic agent flows don't
 		// race a background seed.
-		if !noLearnActive(flags) && !shouldSkipLearnHook(cmd.Name()) {
+		if !noLearnActive(flags) && !shouldSkipLearnHook(cmd.CommandPath()) {
 			runLearnInitOnce(cmd.Context())
 		}
 		return nil
@@ -265,7 +265,7 @@ Run 'learn-loop-example-pp-cli doctor' to verify auth and connectivity.`,
 	return rootCmd
 }
 
-// learnHookSkipList enumerates framework command names that any
+// learnHookSkipList enumerates framework command path segments that any
 // future PersistentPreRunE recall hook must NOT trigger on. Today the
 // teach/recall path is invoked explicitly by the agent, so there is
 // no consumer of this list at runtime; the skip-list ships in v1 as
@@ -273,8 +273,8 @@ Run 'learn-loop-example-pp-cli doctor' to verify auth and connectivity.`,
 // the granola autorefresh shape) can consult it without re-deriving
 // the set in every PR.
 //
-// Names match the cobra Use: field. Aliases (e.g. "sync-api") are
-// matched as-is.
+// Names match any segment of Cobra's CommandPath. Aliases (e.g. "sync-api")
+// are matched as-is.
 var learnHookSkipList = map[string]struct{}{
 	"auth":          {},
 	"doctor":        {},
@@ -289,12 +289,14 @@ var learnHookSkipList = map[string]struct{}{
 }
 
 // shouldSkipLearnHook reports whether a recall pre-run hook should
-// short-circuit for cmdName. Used today only by unit tests asserting
-// the contents of learnHookSkipList; reserved for a future
-// PersistentPreRunE auto-recall integration.
-func shouldSkipLearnHook(cmdName string) bool {
-	_, skip := learnHookSkipList[cmdName]
-	return skip
+// short-circuit for commandPath.
+func shouldSkipLearnHook(commandPath string) bool {
+	for _, segment := range strings.Fields(commandPath) {
+		if _, skip := learnHookSkipList[segment]; skip {
+			return true
+		}
+	}
+	return false
 }
 
 func ExitCode(err error) int {
