@@ -1,160 +1,181 @@
 ---
 status: active
 created: 2026-05-24
+revised: 2026-05-25
 type: feat
 plan_depth: lightweight
-primary_repo: mvanhorn/cli-printing-press
-secondary_repo: mvanhorn/printing-press-library
+primary_repo: mvanhorn/printing-press-library
 predecessor_plan: docs/plans/2026-05-23-002-feat-generator-wide-self-learning-cli-plan.md
 gates_phase: 2.5 (between Phase 2 ship and Phase 3 full sweep of predecessor plan)
 ---
 
-# feat: ESPN learn config — first real-seed pilot
+# feat: ESPN learn config — first real-seed pilot (patch path)
 
-**Primary target repo:** `mvanhorn/cli-printing-press` (this repo, where the espn spec lives).
-**Secondary target repo:** `mvanhorn/printing-press-library` (where the swept espn CLI ships).
+**Target repo:** `mvanhorn/printing-press-library` (the published library — patch path, not regenerate path).
 
 ## Why this plan exists
 
-The predecessor plan (cli-printing-press#2085, printing-press-library#826, #827) shipped the self-learning loop into 5 pilot CLIs with empty `spec.Learn` defaults — recall returns `{found: false}` because there are no taught queries and no entity-lookup seeds. The dogfood window the predecessor plan called for (1-2 weeks of recall/teach traffic) measures nothing in that state.
+The predecessor plan shipped the self-learning loop into 5 pilot CLIs with empty `spec.Learn` defaults — recall returns `{found: false}` because there are no entity-lookup seeds. The dogfood window the predecessor plan called for (1-2 weeks of recall/teach traffic) measures nothing in that state.
 
-This plan authors a real, populated `spec.Learn` block for ESPN — the cleanest authoring target across the 5 pilots — so the pilot actually exercises the entity-substitution + pattern-extraction layer the predecessor plan built. The plan's deliverable proves the loop's value end-to-end and creates the worked example for the other 4 pilots + eventually the rest of the library.
+This plan populates ESPN's `internal/cli/learn_init.go` directly in the library with real seed data (NFL/NBA/MLB/MLS team rosters), so the pilot actually exercises the entity-substitution + pattern-extraction layer the predecessor plan built.
+
+## Path decision: patch, not regenerate
+
+**Patch the published artifact directly.** ESPN was originally generated from `/tmp/espn-spec.yaml` (transient, gone). There's no `catalog/espn.yaml`, no canonical source spec anywhere in cli-printing-press. Regenerating means reconstructing the source spec from the published artifact first — hours of work and divergence risk from the existing CLI's hand-patches.
+
+Patch path:
+1. Hand-edit `library/media-and-entertainment/espn/internal/cli/learn_init.go` with real seeds
+2. Record the patch in `library/media-and-entertainment/espn/.printing-press-patches.json` per AGENTS.md convention
+3. Ship as a library-side PR
+
+**Known risk:** the sweep tool doesn't currently read patches.json to preserve hand-edits. If anyone re-runs `tools/sweep-learn-install/` against espn later (e.g., during U15 full sweep), the hand-edited `learn_init.go` gets overwritten back to stub-defaults. Worst case: seeds get lost, recall falls back to benign no-op, no breakage but value loss. Acceptable for the pilot; side-car infrastructure can be designed later if mass re-sweeps become a real recurring pain.
 
 ## Scope
 
 ### In scope
 
-- Author `spec.Learn` block for ESPN in `cli-printing-press`'s espn spec (catalog entry or internal spec, whichever holds the source of truth — check `catalog/espn.yaml` and `internal/spec/testdata/`)
-- Populate three fields:
-  - `ticker_patterns`: regex patterns for ESPN's stable identifiers (game IDs, athlete IDs, team IDs)
-  - `stopwords`: domain-specific filler words for sports queries ("vs", "games", "schedule", "tonight", etc.)
-  - `entity_lookup_seeds`: ~49 team rows per league (NFL 32, NBA 30, MLB 30, MLS 30+) covering canonical name + common aliases ("Niners" → "San Francisco 49ers")
-- Regenerate espn from the local generator and verify the emitted `learn_init.go` carries the seeds
-- Sweep the published espn entry in printing-press-library to update its learn_init.go with the new seeds
-- Teach 3-5 real-world queries against the swept binary to validate the recall + pattern-Apply paths work end-to-end against real data
-- Stack a follow-up PR on printing-press-library#827 (or land separately after #827 merges) with just the espn changes
+- Hand-edit `library/media-and-entertainment/espn/internal/cli/learn_init.go` to populate:
+  - `newLearnConfig()` with the ESPN ticker patterns (regexes for ESPN event IDs, athlete IDs, team IDs) and sports stopwords
+  - `initLearn()` with the entity-lookup seed map: ~120 team entries across NFL (32), NBA (30), MLB (30), MLS (30) with 2-4 aliases each
+- The seed data is already authored in the worked example at `cli-printing-press:docs/SPEC-LEARN-AUTHORING.md` — copy from there into Go code form
+- Add a `.printing-press-patches.json` entry for this customization
+- Validate locally: `go build ./...`, `go test ./...`, smoke recall with fresh HOME
+- Open a per-CLI PR against `printing-press-library` main
 
-### Deferred for later
+### Out of scope
 
-- The other 4 pilots (contact-goat, company-goat, podcast-goat, instacart) — same authoring exercise, separate per-CLI plans
-- Building a `learn:` block authoring guide / template for spec authors generally
-- Auto-populating entity_lookup_seeds from a CLI's `sync` data (e.g., espn could auto-seed teams from its already-synced sport data)
-
-### Outside this product's identity
-
-- Manual recall traffic generation (faking dogfood data). Real usage produces meaningful threshold measurements; synthetic data doesn't.
+- Reconstructing espn's source spec in cli-printing-press (catalog/espn.yaml authoring)
+- Regenerating espn via `cli-printing-press generate espn`
+- Side-car file infrastructure (sweep tool reading `.learn-seeds.yaml` per-CLI)
+- The other 4 pilots (contact-goat, company-goat, podcast-goat, instacart) — same exercise, separate plans
+- Auto-populating seeds from a CLI's `sync` data
 
 ## Implementation Units
 
-### U1. Author spec.Learn block for ESPN
+### U1. Author ESPN's spec.Learn data as Go code
 
-**Goal:** Write the YAML block with ticker patterns, stopwords, and team-roster seeds.
+**Goal:** Convert the YAML-shaped seeds in the authoring guide into the Go literal map shape that `initLearn()` and `newLearnConfig()` expect.
 
-**Files:**
-- `cli-printing-press`: the espn spec source file (likely `catalog/espn.yaml` or `internal/spec/testdata/espn.yaml`; verify)
-- A scratch reference file documenting the data sources (ESPN public API team list, Wikipedia rosters) so future maintainers can refresh
+**Files (in `mvanhorn/printing-press-library`):**
+- Modify: `library/media-and-entertainment/espn/internal/cli/learn_init.go`
+
+**Source data (in `mvanhorn/cli-printing-press`):**
+- Read: `docs/SPEC-LEARN-AUTHORING.md` (contains all 122 team entries with aliases as YAML)
 
 **Approach:**
 
-Ticker patterns to register:
-- Game IDs: `^[0-9]{9}$` (ESPN's 9-digit event IDs)
-- Athlete IDs: `^a-[0-9]+$` or similar (check actual format)
-- Team IDs: `^t-[a-z0-9]+$` or league-prefix patterns (check)
+The current `learn_init.go` is the stub-emit version from the sweep tool — `newLearnConfig()` returns an unconfigured `entities.NewConfig()`, `initLearn()` is a no-op. Replace with:
 
-Stopwords to add:
-- "vs", "v.", "vs.", "versus", "tonight", "today", "yesterday", "tomorrow", "weekend"
-- "game", "games", "match", "matches", "schedule", "scoreboard"
-- "score", "scores", "result", "results", "winner"
-- "stats", "standings", "lineup", "roster", "depth"
+```go
+// Illustrative — actual function signatures come from the generator's
+// learn_init.go.tmpl. Mirror existing struct shape.
 
-Seed kinds + entries (~120 rows total):
-- `nfl_team`: 32 teams × ~3 aliases each (e.g., `canonical: "San Francisco 49ers"`, `aliases: ["49ers", "Niners", "SF 49ers", "SF"]`)
-- `nba_team`: 30 teams × ~3 aliases
-- `mlb_team`: 30 teams × ~3 aliases
-- `mls_team`: 30+ teams × ~3 aliases
+func newLearnConfig() *entities.Config {
+    cfg := entities.NewConfig()
+    cfg.RegisterTickerPattern(regexp.MustCompile(`^[0-9]{9}$`))
+    cfg.RegisterTickerPattern(regexp.MustCompile(`^a-[0-9]+$`))
+    cfg.RegisterTickerPattern(regexp.MustCompile(`^[a-z]{2,4}-[a-z]+$`))
+    cfg.RegisterStopwords("vs", "v", "versus", "game", "games", "match",
+        "matches", "tonight", "today", "yesterday", "tomorrow", "weekend",
+        "schedule", "scoreboard", "score", "scores", "result", "results",
+        "winner", "stats", "standings", "lineup", "roster")
+    return cfg
+}
 
-Source the canonical names from ESPN's own team metadata (each league's `/teams` endpoint). Source aliases from common usage + each team's abbreviation.
+func initLearn(ctx context.Context, db *sql.DB) error {
+    seeds := map[string][]lookups.ConfigSeed{
+        "nfl_team": {
+            {Canonical: "Arizona Cardinals", Aliases: []string{"Cardinals", "Cards", "ARI", "AZ"}},
+            {Canonical: "Atlanta Falcons",   Aliases: []string{"Falcons", "ATL"}},
+            // ... 30 more NFL teams ...
+        },
+        "nba_team": { /* 30 teams */ },
+        "mlb_team": { /* 30 teams */ },
+        "mls_team": { /* 30 teams */ },
+    }
+    return lookups.SeedFromConfig(ctx, db, seeds)
+}
+```
 
-**Test scenarios:**
-- Spec parses (`validateLearn` passes per U1 of predecessor plan)
-- Generator emits learn_init.go carrying all the seeds verbatim
-- The generated learn_init.go compiles in the printed CLI
+The exact identifier types (`lookups.ConfigSeed`, `entities.Config`, etc.) and function signatures live in the sweep-emitted file — read it before editing to match the shape.
 
-### U2. Regenerate ESPN locally + validate
+Pull the full team list from `cli-printing-press:docs/SPEC-LEARN-AUTHORING.md`. The YAML format `{canonical: "...", aliases: ["...", "..."]}` maps directly to `{Canonical: "...", Aliases: []string{"...", "..."}}`.
 
-**Goal:** Confirm the spec change flows through the generator to a working binary.
+### U2. Record the patch in `.printing-press-patches.json`
+
+**Goal:** Catalog the customization per AGENTS.md convention.
 
 **Files:**
-- No source changes — uses existing cli-printing-press from PR #2085 branch
-- New output goes to `~/printing-press/library/espn/` (local working library, not the published library)
+- Create or modify: `library/media-and-entertainment/espn/.printing-press-patches.json`
+
+**Approach:**
+
+Per AGENTS.md, add an entry:
+
+```json
+{
+  "id": "espn-learn-seeds",
+  "summary": "Populate learn_init.go with NFL/NBA/MLB/MLS team rosters and ESPN ticker patterns; sweep tool stub-emits empty defaults.",
+  "reason": "Pilot of plan 2026-05-23-002 ships the self-learning loop with empty defaults. Adding real seeds unlocks entity-aware recall + pattern extraction for ESPN's killer flow ('Niners game tonight' → resolves to right event via alias). Future re-sweeps will overwrite this until side-car infrastructure lands.",
+  "files": ["internal/cli/learn_init.go"],
+  "validated_outcome": "recall 'Cowboys game tonight' (never directly taught) returns the right event via nfl_team alias resolution after teaching 'Niners game tonight'."
+}
+```
+
+Use the existing patches.json structure if one is already there (it might be after the previous sweep). Don't overwrite — append to `patches[]`.
+
+### U3. Validate locally + open library PR
+
+**Goal:** Confirm the change works end-to-end + ship.
 
 **Approach:**
 
 ```bash
-cd ~/cli-printing-press
-git checkout feat/generator-wide-self-learning-loop  # or whatever branch PR #2085 lands on after merge
-cli-printing-press generate espn
-# Inspect ~/printing-press/library/espn/internal/cli/learn_init.go — should have all seeds
-cd ~/printing-press/library/espn
+cd ~/printing-press-library
+git checkout -b feat/espn-learn-seeds main  # or stack on feat/learn-pilot-sweep if #826/#827 not yet merged
+# After editing learn_init.go and patches.json:
+cd library/media-and-entertainment/espn
+go build ./...
 go test ./...
-HOME=/tmp/espn-test go build -o /tmp/espn-pp-cli ./cmd/espn-pp-cli
-HOME=/tmp/espn-test /tmp/espn-pp-cli teach --query "Niners game tonight" --resource <some-espn-event-id> --resource-type events
-HOME=/tmp/espn-test /tmp/espn-pp-cli recall "49ers game" --json  # should find the same hit via alias resolution
+go build -o /tmp/espn-pp-cli ./cmd/espn-pp-cli
+
+# Smoke with fresh HOME (critical — per predecessor plan's retrospective)
+HOME=/tmp/espn-test-$$ /tmp/espn-pp-cli teach \
+  --query "Niners game tonight" \
+  --resource <some-real-espn-event-id> \
+  --resource-type events
+
+HOME=/tmp/espn-test-$$ /tmp/espn-pp-cli recall "49ers game tonight" --json
+# Expected: hits the same resource via "49ers" alias → "San Francisco 49ers" canonical
+
+HOME=/tmp/espn-test-$$ /tmp/espn-pp-cli recall "Cowboys game tonight" --json
+# Expected: after pattern extraction fires (3+ similar teaches), substitutes via nfl_team
+# OR: returns no-hit if pattern threshold not reached yet — both acceptable
+
+cd ~/printing-press-library
+git add library/media-and-entertainment/espn/
+git commit -m "feat(cli): populate espn learn_init with NFL/NBA/MLB/MLS rosters"
+git push -u origin feat/espn-learn-seeds
+gh pr create --title "feat(cli): populate espn learn_init.go with real team rosters" \
+  --body "Patch path per docs/plans/2026-05-24-001..."
 ```
 
-**Test scenarios:**
-- Recall an alias not directly taught (teach "Niners game tonight" → recall "49ers game tonight" hits via alias)
-- Pattern extraction fires after 3 structurally-similar teaches (e.g., teach Niners + Cowboys + Eagles → pattern emerges for "{nfl_team} game tonight")
-- Pattern Apply substitutes correctly (recall "Patriots game tonight" returns the right event via substitution against the seeded NFL roster)
-
-### U3. Sweep the published espn entry
-
-**Goal:** Update printing-press-library's espn so the published CLI carries the new seeds.
-
-**Files:**
-- `printing-press-library:library/media-and-entertainment/espn/internal/cli/learn_init.go`
-- Possibly `.printing-press.json` for the version stamp
-
-**Approach:**
-
-Build the sweep tool from PR #826's branch. Run against the printing-press-library espn entry. The sweep should regenerate `learn_init.go` with the new seeds and leave everything else untouched (the spec block is the only delta from the previous sweep state).
-
-Commit on a new branch stacked on #827 (or land separately after #827 merges to main). Validate end-to-end:
-- `go build`, `go test`
-- `HOME=fresh-X ./espn-pp-cli recall "Niners game" --json` — returns the right event via alias resolution against the seeded data
-
-### U4. Author guide for spec.Learn
-
-**Goal:** Document the authoring process so the other 4 pilots (and future CLI authors) can replicate.
-
-**Files:**
-- `cli-printing-press:docs/SPEC-LEARN-AUTHORING.md` (new) — guide to authoring `spec.Learn` blocks: which fields, how to source seed data, how to test, common pitfalls
-
-**Approach:**
-
-The guide is a worked example based on ESPN. Sections:
-1. When to add a `learn:` block to your spec (vs leaving the package as a benign no-op)
-2. Sourcing ticker_patterns (look at the API's identifier shapes)
-3. Sourcing stopwords (domain filler words your queries always include)
-4. Sourcing entity_lookup_seeds (canonical + aliases, where to find them)
-5. Local validation workflow (regenerate, recall smoke test, alias resolution test)
-6. Library sweep workflow (when the CLI is already published)
+If `#826` and `#827` haven't merged yet, stack this PR on `feat/learn-pilot-sweep` (PR #827's branch) so the espn changes flow through naturally with the rest of the pilot. Otherwise base on main.
 
 ## Verification
 
-**Done when:**
-- ESPN's spec.Learn block carries real seed data (~120+ entity rows, 5+ ticker patterns, 10+ stopwords)
-- Local regeneration produces a working learn_init.go with the seeds baked in
-- A teach against ESPN's published library CLI populates the cache; a recall via alias returns the same hit
-- A PR is open with the espn changes (stacked on or after printing-press-library#827)
-- The authoring guide exists at `docs/SPEC-LEARN-AUTHORING.md`
+Done when:
+- ESPN's `learn_init.go` carries the 122-team roster + ESPN ticker patterns + sports stopwords
+- `.printing-press-patches.json` has the new patch entry
+- Local validation passes (build, test, smoke teach + recall with fresh HOME)
+- PR is open against `mvanhorn/printing-press-library`
 
-## Pickup prompt for fresh window
-
-Paste this into a new Claude Code session to resume:
+## Pickup prompt
 
 ```
 /ce-work /Users/mvanhorn/cli-printing-press/docs/plans/2026-05-24-001-feat-espn-learn-config-pilot-plan.md
 ```
 
-The predecessor plan at `docs/plans/2026-05-23-002-feat-generator-wide-self-learning-cli-plan.md` carries full context (Phase 1+2 retrospective, 4 bugs found, validation gate ordering). The 3 in-flight PRs (#2085 generator, #826 tool, #827 pilot) hold the implementation work. This plan is small and self-contained — 4 units, mostly spec authoring + one validation sweep.
+The seed data lives at `~/cli-printing-press/docs/SPEC-LEARN-AUTHORING.md` (NFL/NBA/MLB/MLS rosters with aliases). The current stub-emit `learn_init.go` lives at `~/printing-press-library/library/media-and-entertainment/espn/internal/cli/learn_init.go`. AGENTS.md at `~/printing-press-library/AGENTS.md` covers the patches.json convention.
+
+Note: this is a patch path, not a regenerate path. Don't reconstruct espn's source spec; just edit the published artifact directly and record the customization in patches.json.
