@@ -1187,7 +1187,7 @@ func (c *AuthConfig) OAuth2RefreshTokenEnvVar() *AuthEnvVar {
 			return &c.EnvVarSpecs[i]
 		}
 	}
-	for i := len(c.EnvVarSpecs) - 1; i >= 0; i-- {
+	for i := range slices.Backward(c.EnvVarSpecs) {
 		if c.EnvVarSpecs[i].EffectiveKind() == AuthEnvVarKindAuthFlowInput {
 			return &c.EnvVarSpecs[i]
 		}
@@ -2910,7 +2910,7 @@ func ReservedResourceParentPrefixCandidate(name, path string) string {
 
 func ReservedResourcePathTerminatesAt(name, path string) bool {
 	segments := splitRequestPath(path)
-	for i := len(segments) - 1; i >= 0; i-- {
+	for i := range slices.Backward(segments) {
 		if isPathParamLikeSegment(segments[i]) {
 			continue
 		}
