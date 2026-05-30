@@ -1,0 +1,43 @@
+name: vestaboard
+display_name: Vestaboard
+description: Read and write messages on a Vestaboard split-flap display, with transition control and VBML text formatting.
+category: devices
+spec_url: https://raw.githubusercontent.com/mvanhorn/cli-printing-press/main/catalog/specs/vestaboard-spec.yaml
+spec_format: custom
+tier: community
+spec_source: docs
+verified_date: "2026-05-29"
+homepage: https://www.vestaboard.com
+auth_key_url: https://web.vestaboard.com
+auth_required: true
+auth_instructions: Create a Cloud API token in the API tab on web.vestaboard.com (or in the mobile app under Settings -> Advanced Settings). Pass it as the X-Vestaboard-Token header.
+auth_env_vars:
+  - VESTABOARD_API_KEY
+notes: |
+  First catalog entry exercising a multi-host generated client: the VBML
+  formatter (vbml.vestaboard.com/format) sits on a different origin than the
+  Cloud API (cloud.vestaboard.com) and takes no credentials. The spec models
+  it as a no-auth tier so the generated client suppresses X-Vestaboard-Token on
+  the second host while still sending it to the Cloud API — verified via
+  --dry-run. A plain resource base_url override would NOT suppress the header
+  (no_auth is not consumed by the client request path), so tier routing is the
+  correct mechanism here.
+
+  Surface (Cloud API, X-Vestaboard-Token header):
+    - message get      — GET /         read the current layout (a 2D char-code grid)
+    - message send     — POST /        {text} | {characters:[[int]]} | {forced}; 1 msg / 15s
+    - transition get   — GET /transition
+    - transition set   — PUT /transition   classic|wave|drift|curtain × gentle|fast
+    - vbml format      — POST vbml.vestaboard.com/format (no auth)  text -> char codes
+
+  Hand-written novel agent features (the board speaks in 6x22 integer grids that
+  are unreadable/unwritable without tooling):
+    - message preview  — render the current board as a bordered block of glyphs
+    - characters       — the character-code table (code -> glyph) for building payloads
+
+  Spec sourcing: catalog/specs/vestaboard-spec.yaml is an internal-format spec
+  transcribed from the public docs at
+  https://docs.vestaboard.com/docs/read-write-api/endpoints and
+  https://docs.vestaboard.com/docs/charactercodes (verified 2026-05-29). This
+  covers the Cloud Read/Write API; the Local API (LAN) and Subscription API are
+  intentionally out of scope.
