@@ -229,7 +229,8 @@ The printing press automates what Steinberger does intuitively: look at an API, 
 
 ### Every endpoint. Every insight. One command.
 
-Discord's API has 300+ endpoints. Most generators stop there - wrap every endpoint, ship it, done. But [discrawl](https://github.com/steipete/discrawl) - Peter Steinberger's Discord tool - ignores most of them. It ships 11 commands: `sync`, `search`, `sql`, `tail`, `mentions`, `members`. 583 stars.
+Discord's API has 300+ endpoints. Most gener
+ators stop there - wrap every endpoint, ship it, done. But [discrawl](https://github.com/steipete/discrawl) - Peter Steinberger's Discord tool - ignores most of them. It ships 11 commands: `sync`, `search`, `sql`, `tail`, `mentions`, `members`. 583 stars.
 
 Why does the 11-command tool win? Because Steinberger saw something Discord's own API designers didn't: conversations are institutional knowledge. Every message thread is a document that should be archived, indexed, and searched locally. Those 11 commands embody that insight. The 300 endpoint wrappers don't.
 
